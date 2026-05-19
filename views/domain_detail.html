@@ -1,0 +1,190 @@
+<h1>Domain: {{.Domain}}</h1>
+
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;flex-wrap:wrap;">
+    <span style="font-size:0.85rem;color:var(--pico-muted-color);">Export report:</span>
+    <a href="/export?format=csv&domain={{.Domain}}"  role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">CSV</a>
+    <a href="/export?format=xlsx&domain={{.Domain}}" role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">XLSX</a>
+    <a href="/export?format=pdf&domain={{.Domain}}"  role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">PDF</a>
+    <a href="/export?format=docx&domain={{.Domain}}" role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">DOCX</a>
+</div>
+
+<div class="kpi-grid">
+    <article class="kpi-card">
+        <header>Total Messages</header>
+        <p class="kpi-value">{{.TotalMessages}}</p>
+    </article>
+    <article class="kpi-card {{if ge .PassRate 95.0}}pass{{else if ge .PassRate 80.0}}warn{{else}}fail{{end}}">
+        <header>Pass Rate</header>
+        <p class="kpi-value">{{printf "%.1f" .PassRate}}%</p>
+    </article>
+    <article class="kpi-card">
+        <header>Unique Senders</header>
+        <p class="kpi-value">{{.UniqueSenders}}</p>
+    </article>
+    <article class="kpi-card">
+        <header>Unique Recipients</header>
+        <p class="kpi-value">{{.UniqueRecipients}}</p>
+    </article>
+</div>
+
+<article>
+    <header>Live DMARC Record <small style="font-weight:normal;font-size:0.75em;opacity:0.6;">_dmarc.{{.Domain}}</small></header>
+    {{if .DMARCRecord.Found}}
+    <dl class="dmarc-tags">
+    {{range .DMARCRecord.Tags}}
+        <dt>{{.Label}}</dt>
+        <dd>
+        {{if eq .Key "p"}}
+            <span class="policy-{{.Value}}">{{.Value}}</span>
+        {{else if eq .Key "sp"}}
+            <span class="policy-{{.Value}}">{{.Value}}</span>
+        {{else if eq .Key "rua"}}
+            {{range splitComma .Value}}<a href="{{.}}" style="word-break:break-all;" target="_blank" rel="noopener noreferrer">{{.}}</a> {{end}}
+        {{else if eq .Key "ruf"}}
+            {{range splitComma .Value}}<a href="{{.}}" style="word-break:break-all;" target="_blank" rel="noopener noreferrer">{{.}}</a> {{end}}
+        {{else}}
+            {{.Value}}
+        {{end}}
+        </dd>
+    {{end}}
+    </dl>
+    <details style="margin-top:0.5rem;">
+        <summary style="font-size:0.85em;cursor:pointer;color:var(--pico-muted-color);">Tag explanations</summary>
+        <dl class="dmarc-tags" style="margin-top:0.5rem;">
+        {{range .DMARCRecord.Tags}}{{if .Explanation}}
+            <dt>{{.Label}}</dt><dd>{{.Explanation}}</dd>
+        {{end}}{{end}}
+        </dl>
+    </details>
+    <details style="margin-top:0.5rem;">
+        <summary style="font-size:0.85em;cursor:pointer;color:var(--pico-muted-color);">Raw TXT record</summary>
+        <code style="display:block;margin-top:0.5rem;word-break:break-all;font-size:0.8em;">{{.DMARCRecord.Raw}}</code>
+    </details>
+    {{else}}
+    <p class="flash flash-error" style="margin:0;">{{if .DMARCRecord.Error}}{{.DMARCRecord.Error}}{{else}}No DMARC record found.{{end}}</p>
+    {{end}}
+</article>
+<br/>
+
+<article>
+    <header>MTA-STS Record <small style="font-weight:normal;font-size:0.75em;opacity:0.6;">_mta-sts.{{.Domain}}</small></header>
+    {{if .MTASTSRecord.Found}}
+    <dl class="dmarc-tags">
+        <dt>Version</dt><dd>STSv1</dd>
+        {{if .MTASTSRecord.ID}}<dt>Policy ID</dt><dd><code>{{.MTASTSRecord.ID}}</code></dd>{{end}}
+    </dl>
+    <details style="margin-top:0.5rem;">
+        <summary style="font-size:0.85em;cursor:pointer;color:var(--pico-muted-color);">Tag explanations</summary>
+        <dl class="dmarc-tags" style="margin-top:0.5rem;">
+            <dt>Version (v=)</dt><dd>MTA-STS version identifier — must be STSv1.</dd>
+            {{if .MTASTSRecord.ID}}<dt>Policy ID (id=)</dt><dd>A string that changes whenever the MTA-STS policy file at <code>https://mta-sts.{{.Domain}}/.well-known/mta-sts.txt</code> is updated. Sending servers cache this value; a change signals them to re-fetch the policy.</dd>{{end}}
+        </dl>
+    </details>
+    <details style="margin-top:0.5rem;">
+        <summary style="font-size:0.85em;cursor:pointer;color:var(--pico-muted-color);">Raw TXT record</summary>
+        <code style="display:block;margin-top:0.5rem;word-break:break-all;font-size:0.8em;">{{.MTASTSRecord.Raw}}</code>
+    </details>
+    {{else if .MTASTSRecord.Error}}
+    <p class="flash flash-error" style="margin:0;">DNS error: {{.MTASTSRecord.Error}}</p>
+    {{else}}
+    <p style="color:var(--pico-muted-color);margin:0;">No MTA-STS record found.</p>
+    {{end}}
+</article>
+<br/>
+
+<article>
+    <header>BIMI Record <small style="font-weight:normal;font-size:0.75em;opacity:0.6;">default._bimi.{{.Domain}}</small></header>
+    {{if .BIMIRecord.Found}}
+    <dl class="dmarc-tags">
+        <dt>Version</dt><dd>BIMI1</dd>
+        {{if .BIMIRecord.LogoURL}}<dt>Logo URL (l=)</dt><dd><a href="{{.BIMIRecord.LogoURL}}" style="word-break:break-all;" target="_blank" rel="noopener noreferrer">{{.BIMIRecord.LogoURL}}</a></dd>{{end}}
+        {{if .BIMIRecord.VMCCert}}<dt>VMC Certificate (a=)</dt><dd style="word-break:break-all;"><code>{{.BIMIRecord.VMCCert}}</code></dd>{{end}}
+    </dl>
+    <details style="margin-top:0.5rem;">
+        <summary style="font-size:0.85em;cursor:pointer;color:var(--pico-muted-color);">Tag explanations</summary>
+        <dl class="dmarc-tags" style="margin-top:0.5rem;">
+            <dt>Version (v=)</dt><dd>BIMI version identifier — must be BIMI1.</dd>
+            {{if .BIMIRecord.LogoURL}}<dt>Logo URL (l=)</dt><dd>A publicly accessible SVG file in BIMI Tiny P/S profile format containing your brand mark. Displayed as a sender avatar in supporting mail clients.</dd>{{end}}
+            {{if .BIMIRecord.VMCCert}}<dt>VMC Certificate (a=)</dt><dd>A Verified Mark Certificate issued by a certified authority (e.g., DigiCert, Entrust). Required by Gmail and other providers that enforce BIMI with authenticated brand indicators.</dd>{{end}}
+        </dl>
+    </details>
+    <details style="margin-top:0.5rem;">
+        <summary style="font-size:0.85em;cursor:pointer;color:var(--pico-muted-color);">Raw TXT record</summary>
+        <code style="display:block;margin-top:0.5rem;word-break:break-all;font-size:0.8em;">{{.BIMIRecord.Raw}}</code>
+    </details>
+    {{else if .BIMIRecord.Error}}
+    <p class="flash flash-error" style="margin:0;">DNS error: {{.BIMIRecord.Error}}</p>
+    {{else}}
+    <p style="color:var(--pico-muted-color);margin:0;">No BIMI record found.</p>
+    {{end}}
+</article>
+<br/>
+
+<article>
+    <header>Compliance Trend (last 90 days)</header>
+    <canvas id="domain-trend-chart"></canvas>
+    <script type="application/json" id="domain-trend-data">{{.DomainTrendData}}</script>
+</article>
+
+{{if .RecipientDomains}}
+<h2>Top Recipient Domains</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Recipient Domain (envelope_to)</th>
+            <th>Messages</th>
+            <th>Passed</th>
+            <th>Failed</th>
+            <th>Pass Rate</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .RecipientDomains}}
+        <tr class="{{if ge .PassRate 95.0}}row-pass{{else if ge .PassRate 80.0}}row-warn{{else}}row-fail{{end}}">
+            <td><a href="/recipients/{{.EnvelopeTo}}">{{.EnvelopeTo}}</a></td>
+            <td>{{.TotalMessages}}</td>
+            <td>{{.Passed}}</td>
+            <td>{{.Failed}}</td>
+            <td>
+                <progress class="pass-bar" value="{{printf "%.0f" .PassRate}}" max="100"></progress>
+                <span class="badge {{if ge .PassRate 95.0}}badge-pass{{else if ge .PassRate 80.0}}badge-warn{{else}}badge-fail{{end}}">{{printf "%.1f" .PassRate}}%</span>
+            </td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+{{end}}
+
+{{if .Records}}
+<h2>Recent Records</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Source IP</th>
+            <th>Count</th>
+            <th>Disposition</th>
+            <th>DKIM</th>
+            <th>SPF</th>
+            <th>Envelope To</th>
+            <th>Reporter</th>
+            <th>Period</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .Records}}
+        <tr>
+            <td><a href="/sources/{{.SourceIP}}">{{.SourceIP}}</a></td>
+            <td>{{.Count}}</td>
+            <td><span class="disposition-{{.Disposition}}">{{.Disposition}}</span></td>
+            <td><span class="result-{{.EvalDKIM}}">{{.EvalDKIM}}</span></td>
+            <td><span class="result-{{.EvalSPF}}">{{.EvalSPF}}</span></td>
+            <td>{{.EnvelopeTo}}</td>
+            <td>{{.OrgName}}</td>
+            <td><a href="/reports?date_from={{unixTime .DateRangeBegin}}&date_to={{unixTime .DateRangeEnd}}">{{unixTime .DateRangeBegin}} – {{unixTime .DateRangeEnd}}</a></td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+{{else}}
+<p>No records found for this domain.</p>
+{{end}}

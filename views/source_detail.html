@@ -1,0 +1,79 @@
+<h1>Source IP: {{.IP}}</h1>
+
+{{if .IPInfo}}
+<article class="ip-info-card">
+    <header>IP Intelligence</header>
+    <dl class="ip-info-grid">
+        {{if .IPInfo.RDNS}}
+        <dt>Reverse DNS</dt><dd>{{.IPInfo.RDNS}}</dd>
+        {{end}}
+        {{if .IPInfo.WhoisOrg}}
+        <dt>Organization</dt><dd>{{.IPInfo.WhoisOrg}}</dd>
+        {{end}}
+        {{if .IPInfo.WhoisNet}}
+        <dt>Network</dt><dd>{{.IPInfo.WhoisNet}}</dd>
+        {{end}}
+        {{if .IPInfo.WhoisCIDR}}
+        <dt>Range / CIDR</dt><dd>{{.IPInfo.WhoisCIDR}}</dd>
+        {{end}}
+        {{if .IPInfo.WhoisCountry}}
+        <dt>Country</dt><dd>{{.IPInfo.WhoisCountry}}</dd>
+        {{end}}
+        {{if .IPInfo.WhoisAbuse}}
+        <dt>Abuse Contact</dt><dd><a href="mailto:{{.IPInfo.WhoisAbuse}}">{{.IPInfo.WhoisAbuse}}</a></dd>
+        {{end}}
+    </dl>
+</article>
+{{end}}
+
+<div class="kpi-grid">
+    <article class="kpi-card">
+        <header>Total Messages</header>
+        <p class="kpi-value">{{.TotalMessages}}</p>
+    </article>
+    <article class="kpi-card {{if ge .PassRate 95.0}}pass{{else if ge .PassRate 80.0}}warn{{else}}fail{{end}}">
+        <header>Pass Rate</header>
+        <p class="kpi-value">{{printf "%.1f" .PassRate}}%</p>
+    </article>
+    <article class="kpi-card pass">
+        <header>Passed</header>
+        <p class="kpi-value">{{.TotalPassed}}</p>
+    </article>
+    <article class="kpi-card fail">
+        <header>Failed</header>
+        <p class="kpi-value">{{.TotalFailed}}</p>
+    </article>
+</div>
+
+{{if .Records}}
+<table>
+    <thead>
+        <tr>
+            <th>Count</th>
+            <th>Domain</th>
+            <th>Disposition</th>
+            <th>DKIM</th>
+            <th>SPF</th>
+            <th>Envelope To</th>
+            <th>Reporter</th>
+            <th>Period</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .Records}}
+        <tr>
+            <td>{{.Count}}</td>
+            <td><a href="/domains/{{.HeaderFrom}}">{{.HeaderFrom}}</a></td>
+            <td><span class="disposition-{{.Disposition}}">{{.Disposition}}</span></td>
+            <td><span class="result-{{.EvalDKIM}}">{{.EvalDKIM}}</span></td>
+            <td><span class="result-{{.EvalSPF}}">{{.EvalSPF}}</span></td>
+            <td>{{if .EnvelopeTo}}<a href="/recipients/{{.EnvelopeTo}}">{{.EnvelopeTo}}</a>{{end}}</td>
+            <td>{{.OrgName}}</td>
+            <td><a href="/reports?date_from={{unixTime .DateRangeBegin}}&date_to={{unixTime .DateRangeEnd}}">{{unixTime .DateRangeBegin}} – {{unixTime .DateRangeEnd}}</a></td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+{{else}}
+<p>No records found for this IP.</p>
+{{end}}

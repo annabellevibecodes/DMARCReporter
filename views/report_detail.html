@@ -1,0 +1,86 @@
+<h1>Report: {{.Report.ReportID}}</h1>
+{{if .HasXML}}<p><a href="/reports/{{.Report.ID}}/xml" download>⬇ Download original XML</a></p>{{end}}
+
+<div class="grid">
+    <div>
+        <dl>
+            <dt>Domain</dt>
+            <dd><a href="/domains/{{.Report.Domain}}">{{.Report.Domain}}</a></dd>
+            <dt>Reporter</dt>
+            <dd>{{.Report.OrgName}}</dd>
+            <dt>Period</dt>
+            <dd>{{.Report.BeginTime.Format "2006-01-02"}} – {{.Report.EndTime.Format "2006-01-02"}}</dd>
+            <dt>Imported</dt>
+            <dd>{{.Report.ImportedTime.Format "2006-01-02 15:04"}}</dd>
+        </dl>
+    </div>
+    <div>
+        <dl>
+            <dt>Policy</dt>
+            <dd><span class="policy-{{.Report.Policy}}">{{.Report.Policy}}</span></dd>
+            <dt>DKIM Alignment</dt>
+            <dd>{{.Report.ADKIM}}</dd>
+            <dt>SPF Alignment</dt>
+            <dd>{{.Report.ASPF}}</dd>
+            <dt>Percentage</dt>
+            <dd>{{.Report.Pct}}%</dd>
+        </dl>
+    </div>
+</div>
+
+{{if .Mismatches}}
+<h2>From Address Mismatches</h2>
+<p>These records have a different <code>envelope_from</code> (return-path) than <code>header_from</code> (From: header). This may indicate spoofing or a misconfigured third-party sender.</p>
+<table>
+    <thead>
+        <tr>
+            <th>Header From</th>
+            <th>Envelope From</th>
+            <th>Messages</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .Mismatches}}
+        <tr class="row-fail">
+            <td>{{.HeaderFrom}}</td>
+            <td>{{.EnvelopeFrom}}</td>
+            <td>{{.Count}}</td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+{{end}}
+
+<h2>Records</h2>
+{{if .Records}}
+<table>
+    <thead>
+        <tr>
+            <th>Source IP</th>
+            <th>Count</th>
+            <th>Disposition</th>
+            <th>DKIM</th>
+            <th>SPF</th>
+            <th>Envelope To</th>
+            <th>Header From</th>
+            <th>Envelope From</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .Records}}
+        <tr{{if and .EnvelopeFrom (and (ne .EnvelopeFrom "<>") (ne .EnvelopeFrom .HeaderFrom))}} class="row-warn"{{end}}>
+            <td><a href="/sources/{{.SourceIP}}">{{.SourceIP}}</a></td>
+            <td>{{.Count}}</td>
+            <td><span class="disposition-{{.Disposition}}">{{.Disposition}}</span></td>
+            <td><span class="result-{{.EvalDKIM}}">{{.EvalDKIM}}</span></td>
+            <td><span class="result-{{.EvalSPF}}">{{.EvalSPF}}</span></td>
+            <td>{{.EnvelopeTo}}</td>
+            <td>{{.HeaderFrom}}</td>
+            <td>{{if and .EnvelopeFrom (ne .EnvelopeFrom "<>")}}{{.EnvelopeFrom}}{{end}}</td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+{{else}}
+<p>No records in this report.</p>
+{{end}}

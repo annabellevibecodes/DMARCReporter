@@ -1,0 +1,170 @@
+<h1>Data Enrichment</h1>
+<p style="color:var(--pico-muted-color);">
+  Resolves reverse DNS and WHOIS data for all source IPs, and checks DMARC, BIMI, and MTA-STS
+  DNS records for all known domains. Results are cached and used across the dashboard.
+</p>
+
+<article id="summary-card">
+  <header>Pending work</header>
+  <div style="display:flex;gap:32px;margin-bottom:16px;flex-wrap:wrap;">
+    <div>
+      <div style="font-size:2rem;font-weight:700;line-height:1;">{{.UncachedIPs}}</div>
+      <div style="font-size:0.85rem;color:var(--pico-muted-color);">IP(s) without geo / WHOIS data</div>
+    </div>
+    <div>
+      <div style="font-size:2rem;font-weight:700;line-height:1;">{{.StaleDomains}}</div>
+      <div style="font-size:0.85rem;color:var(--pico-muted-color);">domain(s) with missing or stale DNS checks</div>
+    </div>
+    <div>
+      <div style="font-size:2rem;font-weight:700;line-height:1;">{{.TotalDomains}}</div>
+      <div style="font-size:0.85rem;color:var(--pico-muted-color);">total domain(s) tracked</div>
+    </div>
+  </div>
+  {{if and (eq .UncachedIPs 0) (eq .StaleDomains 0)}}
+  <p style="color:var(--pico-ins-color,#1a7f37);">&#10003; Everything is up to date. Click below to force a refresh.</p>
+  {{end}}
+  <button id="start-btn">Start Enrichment</button>
+</article>
+
+<br/>
+
+<article>
+  <header>Clear DNS cache</header>
+  <p style="color:var(--pico-muted-color);margin-bottom:16px;">
+    Removes all cached IP geo/WHOIS data and domain DNS check results.
+    The next enrichment run will re-fetch everything from scratch.
+  </p>
+  <form method="POST" action="/enrich/clear" onsubmit="return confirm('Delete all cached DNS data? This cannot be undone.');">
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    <button type="submit" class="secondary">Clear DNS Cache</button>
+  </form>
+</article>
+
+<br/>
+
+<div id="progress-section" style="display:none;">
+  <article>
+    <header>
+      <span id="progress-title">Running&hellip;</span>
+      <span id="progress-pct" style="float:right;font-variant-numeric:tabular-nums;"></span>
+    </header>
+
+    <!-- IP progress -->
+    <div id="ip-section" style="display:none;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+        <strong>IP lookups</strong>
+        <span id="ip-counter" style="font-size:0.85rem;color:var(--pico-muted-color);"></span>
+      </div>
+      <progress id="ip-bar" value="0" max="1" style="width:100%;margin-bottom:8px;"></progress>
+      <div id="ip-log" style="max-height:200px;overflow-y:auto;font-family:monospace;font-size:12px;background:var(--pico-code-background,#f4f4f4);padding:8px;border-radius:4px;"></div>
+    </div>
+
+    <!-- Domain progress -->
+    <div id="domain-section" style="display:none;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+        <strong>Domain DNS checks</strong>
+        <span id="domain-counter" style="font-size:0.85rem;color:var(--pico-muted-color);"></span>
+      </div>
+      <progress id="domain-bar" value="0" max="1" style="width:100%;margin-bottom:8px;"></progress>
+      <div id="domain-log" style="max-height:200px;overflow-y:auto;font-family:monospace;font-size:12px;background:var(--pico-code-background,#f4f4f4);padding:8px;border-radius:4px;"></div>
+    </div>
+
+    <!-- Done banner -->
+    <div id="done-banner" style="display:none;padding:12px 16px;border-radius:4px;background:var(--pico-ins-color-background,#dafbe1);color:var(--pico-ins-color,#1a7f37);font-weight:600;"></div>
+  </article>
+</div>
+
+<script>
+(function () {
+  var btn = document.getElementById('start-btn');
+  var progressSection = document.getElementById('progress-section');
+
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    btn.textContent = 'Running…';
+    progressSection.style.display = '';
+
+    var ipSection    = document.getElementById('ip-section');
+    var domainSection = document.getElementById('domain-section');
+    var ipBar        = document.getElementById('ip-bar');
+    var domainBar    = document.getElementById('domain-bar');
+    var ipCounter    = document.getElementById('ip-counter');
+    var domainCounter = document.getElementById('domain-counter');
+    var ipLog        = document.getElementById('ip-log');
+    var domainLog    = document.getElementById('domain-log');
+    var doneBanner   = document.getElementById('done-banner');
+    var progressTitle = document.getElementById('progress-title');
+
+    function appendLog(el, text) {
+      var line = document.createElement('div');
+      line.textContent = text;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    var es = new EventSource('/enrich/stream');
+
+    es.onmessage = function (e) {
+      var d = JSON.parse(e.data);
+
+      if (d.type === 'ip_start') {
+        ipSection.style.display = '';
+        ipBar.max = d.total || 1;
+        ipBar.value = 0;
+        ipCounter.textContent = '0 / ' + d.total;
+        if (d.total === 0) {
+          appendLog(ipLog, '(nothing to resolve)');
+        }
+
+      } else if (d.type === 'ip') {
+        ipBar.value = d.done;
+        ipBar.max   = d.total;
+        ipCounter.textContent = d.done + ' / ' + d.total;
+        var flag = d.country ? ' [' + d.country + ']' : '';
+        var mark = d.status === 'ok' ? '✓' : '✗';
+        appendLog(ipLog, mark + ' ' + d.ip + flag);
+
+      } else if (d.type === 'domain_start') {
+        domainSection.style.display = '';
+        domainBar.max = d.total || 1;
+        domainBar.value = 0;
+        domainCounter.textContent = '0 / ' + d.total;
+        if (d.total === 0) {
+          appendLog(domainLog, '(nothing to check)');
+        }
+
+      } else if (d.type === 'domain') {
+        domainBar.value = d.done;
+        domainBar.max   = d.total;
+        domainCounter.textContent = d.done + ' / ' + d.total;
+        var badges = [];
+        if (d.has_dmarc)   badges.push('DMARC');
+        if (d.has_bimi)    badges.push('BIMI');
+        if (d.has_mta_sts) badges.push('MTA-STS');
+        appendLog(domainLog, '✓ ' + d.domain + (badges.length ? ' — ' + badges.join(', ') : ' — none'));
+      }
+    };
+
+    es.addEventListener('done', function (e) {
+      es.close();
+      var d = JSON.parse(e.data);
+      progressTitle.textContent = 'Complete';
+      doneBanner.style.display = '';
+      doneBanner.textContent = '✓ Enrichment complete — ' + d.ips + ' IP(s) resolved, ' + d.domains + ' domain(s) checked.';
+      btn.textContent = 'Run Again';
+      btn.disabled = false;
+    });
+
+    es.addEventListener('error', function (e) {
+      es.close();
+      progressTitle.textContent = 'Error';
+      doneBanner.style.display = '';
+      doneBanner.style.background = 'var(--pico-del-color-background,#ffebe9)';
+      doneBanner.style.color = 'var(--pico-del-color,#82071e)';
+      doneBanner.textContent = '✗ An error occurred. Check server logs.';
+      btn.textContent = 'Retry';
+      btn.disabled = false;
+    });
+  });
+}());
+</script>

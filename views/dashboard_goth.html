@@ -1,0 +1,328 @@
+<div class="goth-scanlines"></div>
+<div style="display:flex;flex-direction:column;min-height:100vh;background:#0a0a0b;color:#d4d0c8;font-family:'IBM Plex Mono',ui-monospace,monospace;">
+
+  <!-- TOP BAR -->
+  <div style="display:flex;align-items:center;padding:10px 24px;border-bottom:2px solid #c1121f;background:#0a0a0b;flex-shrink:0;">
+    <div style="display:flex;gap:8px;margin-right:18px;">
+      <span style="width:10px;height:10px;background:#c1121f;display:inline-block;"></span>
+      <span style="width:10px;height:10px;background:#3a3a3a;display:inline-block;"></span>
+      <span style="width:10px;height:10px;background:#3a3a3a;display:inline-block;"></span>
+    </div>
+    <span style="font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:.18em;color:#c1121f;font-size:16px;text-transform:uppercase;">DMARC<span style="color:#d4d0c8;">::REPORTER</span></span>
+    <span style="margin-left:14px;font-size:11px;color:#6e6a60;letter-spacing:.04em;">~/mail.security &mdash; ssh never_again@reality</span>
+    <nav style="margin-left:auto;display:flex;align-items:center;gap:20px;">
+      <a href="/"         style="font-size:11px;color:#d4d0c8;text-decoration:none;letter-spacing:.04em;">dashboard</a>
+      <a href="/reports"  style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">reports</a>
+      <a href="/domains"  style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">domains</a>
+      <a href="/sources"  style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">senders</a>
+      <a href="/help"     style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">help</a>
+      <a href="/upload"   style="font-size:11px;color:#c1121f;text-decoration:none;font-weight:700;letter-spacing:.04em;">[upload]</a>
+      {{if .IMAPEnabled}}
+      <form method="POST" action="/fetch" style="margin:0">
+        <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+        <button type="submit" style="background:transparent;border:1px solid #1a1a1e;color:#6e6a60;font-family:inherit;font-size:11px;padding:3px 8px;cursor:pointer;letter-spacing:.04em;">[fetch]</button>
+      </form>
+      {{end}}
+      <a href="/enrich" style="font-size:11px;color:#c1121f;text-decoration:none;font-weight:700;letter-spacing:.04em;">[enrich]</a>
+      <div style="display:flex;border:1px solid #1a1a1e;">
+        <a href="/theme?t=pink" style="padding:3px 10px;font-size:10px;font-weight:700;letter-spacing:.12em;color:#6e6a60;text-decoration:none;border-right:1px solid #1a1a1e;">PINK</a>
+        <a href="/theme?t=blue" style="padding:3px 10px;font-size:10px;font-weight:700;letter-spacing:.12em;color:#6e6a60;text-decoration:none;border-right:1px solid #1a1a1e;">BLUE</a>
+        <a href="/theme?t=goth" style="padding:3px 10px;font-size:10px;font-weight:700;letter-spacing:.12em;background:#c1121f;color:#0a0a0b;text-decoration:none;">GOTH</a>
+      </div>
+    </nav>
+  </div>
+
+  <!-- PROMPT + HEADLINE -->
+  <div style="padding:18px 24px 10px;border-bottom:1px solid #1a1a1e;flex-shrink:0;">
+    <div style="font-size:12px;color:#6e6a60;margin-bottom:10px;">
+      <span style="color:#c1121f;">$</span> dmarc report{{if .RecentReports}} --domain {{(index .RecentReports 0).Domain}}{{end}} --since 90d --tone honest
+    </div>
+    {{if .FlashMsg}}
+    <div style="padding:8px 14px;margin-bottom:12px;border-left:3px solid {{if eq .FlashKind "success"}}#5a8a5a{{else if eq .FlashKind "error"}}#c1121f{{else}}#b89a3e{{end}};font-size:12px;background:rgba(255,255,255,0.03);">{{.FlashMsg}}</div>
+    {{end}}
+    <form method="GET" action="/" style="margin-bottom:10px;display:flex;align-items:center;gap:12px;font-size:11px;flex-wrap:wrap;">
+      <span style="color:#c1121f;">$</span>
+      <span style="color:#6e6a60;letter-spacing:.04em;">period</span>
+      <select name="period" onchange="this.form.submit()" style="background:#0f0f11;border:1px solid #3a3a3a;color:#d4d0c8;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:3px 8px;cursor:pointer;outline:none;">
+        {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+      {{if .EFDomains}}
+      <span style="color:#6e6a60;letter-spacing:.04em;">envelope_from</span>
+      <select name="ef" onchange="this.form.submit()" style="background:#0f0f11;border:1px solid #3a3a3a;color:#d4d0c8;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:3px 8px;cursor:pointer;outline:none;">
+        <option value="">-- all --</option>
+        {{range .EFDomains}}<option value="{{.}}"{{if eq . $.SelectedEF}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+      {{end}}
+      {{if .SelectedEF}}<a href="/?period={{.SelectedPeriod}}" style="color:#6e6a60;text-decoration:none;">[x clear]</a>{{end}}
+    </form>
+    <h1 style="font-family:'Oswald',sans-serif;font-weight:800;font-size:48px;line-height:1.05;letter-spacing:.01em;color:#d4d0c8;margin:0 0 6px;text-transform:uppercase;">
+      Oh, look. Another <span style="color:#c1121f;">{{commaN .Stats.Failed}}</span> emails<br>lied about who sent them.
+    </h1>
+    <div style="font-size:13px;color:#9a9486;">
+      <span style="color:#c1121f;">//</span> reporting period: {{.PeriodLabel}} &nbsp;&middot;&nbsp; {{commaN .Stats.TotalMessages}} messages examined &nbsp;&middot;&nbsp; most of them, somehow, behaved.
+    </div>
+  </div>
+
+  <!-- MAIN GRID -->
+  <div style="display:grid;grid-template-columns:1fr 380px;flex:1;min-height:0;">
+
+    <!-- LEFT COLUMN -->
+    <div style="border-right:1px solid #1a1a1e;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
+
+      <!-- §01 Vital signs -->
+      <div style="padding:14px 24px;border-bottom:1px solid #1a1a1e;">
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px;">
+          <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;01</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:18px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">Vital signs</span>
+          <span style="font-size:11px;color:#6e6a60;">// the numbers, in case you cared</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;">
+          <div style="padding:10px 14px;">
+            <div style="font-size:10px;color:#6e6a60;letter-spacing:.16em;text-transform:uppercase;">MAIL VOL</div>
+            <div style="font-family:'Oswald',sans-serif;font-weight:700;font-size:38px;line-height:1;margin-top:4px;color:#d4d0c8;font-variant-numeric:tabular-nums;">{{commaN .Stats.TotalMessages}}</div>
+            <div style="font-size:11px;color:#6e6a60;font-style:italic;margin-top:4px;">messages, all of them</div>
+          </div>
+          <div style="padding:10px 14px;border-left:1px solid #1a1a1e;">
+            <div style="font-size:10px;color:#6e6a60;letter-spacing:.16em;text-transform:uppercase;">PASS RATE</div>
+            <div style="font-family:'Oswald',sans-serif;font-weight:700;font-size:38px;line-height:1;margin-top:4px;color:#d4d0c8;">{{printf "%.2f%%" .Stats.PassRate}}</div>
+            <div style="font-size:11px;color:#6e6a60;font-style:italic;margin-top:4px;">suspiciously high</div>
+          </div>
+          <div style="padding:10px 14px;border-left:1px solid #1a1a1e;">
+            <div style="font-size:10px;color:#6e6a60;letter-spacing:.16em;text-transform:uppercase;">QUARANTINED</div>
+            <div style="font-family:'Oswald',sans-serif;font-weight:700;font-size:38px;line-height:1;margin-top:4px;color:#d4d0c8;"><a href="/sources?disposition=quarantine" style="color:#d4d0c8;text-decoration:none;">{{commaN .Stats.Quarantined}}</a></div>
+            <div style="font-size:11px;color:#6e6a60;font-style:italic;margin-top:4px;">sent to spam to think</div>
+          </div>
+          <div style="padding:10px 14px;border-left:1px solid #1a1a1e;">
+            <div style="font-size:10px;color:#6e6a60;letter-spacing:.16em;text-transform:uppercase;">REJECTED</div>
+            <div style="font-family:'Oswald',sans-serif;font-weight:700;font-size:38px;line-height:1;margin-top:4px;color:#c1121f;"><a href="/sources?disposition=reject" style="color:#c1121f;text-decoration:none;">{{commaN .Stats.Rejected}}</a></div>
+            <div style="font-size:11px;color:#6e6a60;font-style:italic;margin-top:4px;">not even close, sweetie</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- §02 Chart -->
+      <div style="padding:14px 24px;border-bottom:1px solid #1a1a1e;">
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:8px;">
+          <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;02</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:18px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">Weekly compliance</span>
+          <span style="font-size:11px;color:#6e6a60;">// {{.PeriodLabel}}. it goes up and down. that's the whole bit</span>
+        </div>
+        <div id="goth-sparkline" style="font-size:20px;color:#c1121f;letter-spacing:.04em;margin-bottom:8px;white-space:pre;"></div>
+        <div style="background:#0f0f11;border:1px solid #1a1a1e;padding:8px;">
+          <div style="position:relative;height:180px;width:100%;"><canvas id="trend-chart"></canvas></div>
+        </div>
+        <script type="application/json" id="trend-data">{{.TrendData}}</script>
+      </div>
+
+      <!-- §03 Suspects -->
+      <div style="padding:14px 24px;">
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:10px;">
+          <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;03</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:18px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">The suspects</span>
+          <span style="font-size:11px;color:#6e6a60;">// who's sending mail with your name on it</span>
+        </div>
+        {{if .TopFailingSources}}
+        <table style="width:100%;border-collapse:collapse;font-family:inherit;font-size:12px;">
+          <thead>
+            <tr style="border-top:2px solid #d4d0c8;border-bottom:1px solid #d4d0c8;">
+              <th style="text-align:left;padding:7px 8px;font-size:10px;color:#9a9486;font-weight:700;letter-spacing:.16em;text-transform:uppercase;">SOURCE IP</th>
+              <th style="text-align:right;padding:7px 8px;font-size:10px;color:#9a9486;font-weight:700;letter-spacing:.16em;text-transform:uppercase;">VOL</th>
+              <th style="text-align:right;padding:7px 8px;font-size:10px;color:#9a9486;font-weight:700;letter-spacing:.16em;text-transform:uppercase;">FAILED</th>
+              <th style="text-align:left;padding:7px 8px;font-size:10px;color:#9a9486;font-weight:700;letter-spacing:.16em;text-transform:uppercase;">SHARE</th>
+              <th style="text-align:left;padding:7px 8px;font-size:10px;color:#9a9486;font-weight:700;letter-spacing:.16em;text-transform:uppercase;">VERDICT</th>
+            </tr>
+          </thead>
+          <tbody>
+          {{range .TopFailingSources}}
+            <tr style="border-bottom:1px solid #1a1a1e;">
+              <td style="padding:8px 8px;font-variant-numeric:tabular-nums;"><a href="/sources/{{.SourceIP}}" style="color:{{if ge .FailRate 0.5}}#c1121f{{else}}#d4d0c8{{end}};text-decoration:none;">{{.SourceIP}}</a></td>
+              <td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;color:#d4d0c8;">{{commaN .TotalMessages}}</td>
+              <td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;color:#c1121f;">{{commaN .Failed}}</td>
+              <td style="padding:8px 8px;color:#6e6a60;font-size:11px;" id="goth-bar-{{.SourceIP}}"></td>
+              <td style="padding:8px 8px;font-size:12px;color:{{if ge .FailRate 0.5}}#c1121f{{else if ge .FailRate 0.01}}#b89a3e{{else}}#5a8a5a{{end}};">
+                // {{if ge .FailRate 0.5}}caught lying{{else if ge .FailRate 0.01}}half-trying{{else}}fine, i guess{{end}}
+              </td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{else}}
+        <div style="color:#6e6a60;font-size:13px;font-style:italic;padding:16px 0;">// no failing senders detected. suspicious.</div>
+        {{end}}
+      </div>
+      <!-- §04 Top senders by volume -->
+      <div style="padding:14px 24px;border-top:1px solid #1a1a1e;">
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:10px;">
+          <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;04</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:18px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">Top Senders by Volume</span>
+          <span style="font-size:11px;color:#6e6a60;">// who sends the most</span>
+        </div>
+        {{if .TopByVolume}}
+        <table style="width:100%;border-collapse:collapse;font-family:inherit;font-size:12px;">
+          <thead>
+            <tr style="border-top:2px solid #d4d0c8;border-bottom:1px solid #d4d0c8;">
+              <th style="text-align:left;padding:7px 8px;font-size:10px;color:#9a9486;font-weight:700;letter-spacing:.16em;text-transform:uppercase;">SOURCE IP</th>
+              <th style="text-align:right;padding:7px 8px;font-size:10px;color:#9a9486;font-weight:700;letter-spacing:.16em;text-transform:uppercase;">VOLUME</th>
+              <th style="text-align:right;padding:7px 8px;font-size:10px;color:#9a9486;font-weight:700;letter-spacing:.16em;text-transform:uppercase;">PASS%</th>
+            </tr>
+          </thead>
+          <tbody>
+          {{range .TopByVolume}}
+            <tr style="border-bottom:1px solid #1a1a1e;">
+              <td style="padding:7px 8px;"><a href="/sources/{{.SourceIP}}" style="color:#d4d0c8;text-decoration:none;">{{.SourceIP}}</a></td>
+              <td style="padding:7px 8px;text-align:right;font-variant-numeric:tabular-nums;color:#d4d0c8;">{{commaN .TotalMessages}}</td>
+              <td style="padding:7px 8px;text-align:right;font-variant-numeric:tabular-nums;color:{{if ge .PassRate 99.0}}#5a8a5a{{else if ge .PassRate 80.0}}#b89a3e{{else}}#c1121f{{end}};">{{printf "%.1f%%" .PassRate}}</td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{else}}
+        <div style="color:#6e6a60;font-size:12px;font-style:italic;">// no sending sources on record.</div>
+        {{end}}
+      </div>
+
+      <!-- §05 Volume by Geography -->
+      <div style="padding:14px 24px;flex:1;border-top:1px solid #1a1a1e;">
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:10px;">
+          <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;05</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:18px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">Volume by Geography</span>
+          <span style="font-size:11px;color:#6e6a60;">// where your mail originates</span>
+        </div>
+        {{if .GeoDistribution}}
+        <div style="font-size:12px;">
+          {{range .GeoDistribution}}
+          <div style="display:flex;align-items:baseline;gap:12px;padding:5px 0;border-bottom:1px solid #1a1a1e;">
+            <a href="/sources?country={{.Country}}" style="font-weight:700;color:#c1121f;min-width:32px;letter-spacing:.1em;text-decoration:none;">{{.Country}}</a>
+            <span style="color:#d4d0c8;font-variant-numeric:tabular-nums;">{{commaN .TotalMessages}}</span>
+          </div>
+          {{end}}
+        </div>
+        {{else}}
+        <div style="color:#6e6a60;font-size:12px;font-style:italic;">// no geo data. visit sender pages to cache ip info.</div>
+        {{end}}
+      </div>
+    </div>
+
+    <!-- RIGHT RAIL -->
+    <div style="display:flex;flex-direction:column;">
+
+      <!-- §04 Policy (red banner) -->
+      <div style="padding:16px 22px;background:#c1121f;color:#0a0a0b;border-bottom:2px solid #0a0a0b;flex-shrink:0;">
+        <div style="font-size:11px;letter-spacing:.18em;opacity:.85;font-family:inherit;">// CURRENT POLICY</div>
+        <div style="font-family:'Oswald',sans-serif;font-weight:800;font-size:48px;line-height:1;letter-spacing:.01em;text-transform:uppercase;margin-top:4px;">
+          p = {{if .Policy}}{{.Policy}}{{else}}none{{end}}
+        </div>
+        <div style="font-size:12px;margin-top:8px;line-height:1.45;">
+          {{if eq .Policy "reject"}}Pretenders get blocked. No spam folder. No second chances. Maximum violence.
+          {{else if eq .Policy "quarantine"}}Pretenders go to spam. Spam goes to nobody. Nobody asks questions. Justice, of a sort.
+          {{else}}Monitoring only. Nothing is blocked. You are watching the chaos unfold.{{end}}
+        </div>
+        <div style="display:flex;margin-top:12px;font-size:11px;font-weight:700;letter-spacing:.16em;">
+          <span style="flex:1;text-align:center;padding:5px 4px;{{if eq .Policy "none"}}background:#0a0a0b;color:#c1121f;{{else}}background:transparent;color:rgba(10,10,11,0.7);border:1px solid #0a0a0b;{{end}}">NONE</span>
+          <span style="flex:1;text-align:center;padding:5px 4px;{{if eq .Policy "quarantine"}}background:#0a0a0b;color:#c1121f;{{else}}background:transparent;color:rgba(10,10,11,0.7);border:1px solid #0a0a0b;{{end}}">QUARANTINE</span>
+          <span style="flex:1;text-align:center;padding:5px 4px;{{if eq .Policy "reject"}}background:#0a0a0b;color:#c1121f;{{else}}background:transparent;color:rgba(10,10,11,0.7);border:1px solid #0a0a0b;{{end}}">REJECT</span>
+        </div>
+        {{if and (lt .Stats.PassRate 99.8) (ne .Policy "reject")}}
+        <div style="font-size:11px;margin-top:8px;opacity:.85;font-weight:700;">NEXT &gt; graduate to p=reject. failures &lt; 0.2% for 14d. you've earned the violence.</div>
+        {{end}}
+      </div>
+
+      <!-- §05 Domains at risk -->
+      <div style="padding:16px 22px;border-bottom:1px solid #1a1a1e;flex-shrink:0;">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px;">
+          <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;05</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:18px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">Domains at risk</span>
+        </div>
+        {{if .DomainsAtRisk}}
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          {{range .DomainsAtRisk}}
+          <div style="display:flex;align-items:center;gap:10px;font-size:12px;">
+            <a href="/domains/{{.Domain}}" style="flex:1;color:#d4d0c8;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{.Domain}}</a>
+            <span style="color:#c1121f;font-variant-numeric:tabular-nums;font-weight:700;">{{printf "%.1f%%" .PassRatePct}}</span>
+          </div>
+          {{end}}
+        </div>
+        {{else}}
+        <div style="color:#6e6a60;font-size:12px;font-style:italic;">// all domains are compliant. for now.</div>
+        {{end}}
+      </div>
+
+      <!-- §06 DMARC Policy Distribution -->
+      <div style="padding:14px 22px;border-bottom:1px solid #1a1a1e;flex-shrink:0;">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;">
+          <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;06</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:16px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">Policy Distribution</span>
+        </div>
+        <div style="position:relative;height:150px;"><canvas id="policy-pie-chart"></canvas></div>
+        <script type="application/json" id="policy-pie-data">{{.PolicyPieData}}</script>
+      </div>
+
+      <!-- §07 BIMI Coverage -->
+      <div style="padding:14px 22px;border-bottom:1px solid #1a1a1e;flex-shrink:0;">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;">
+          <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;07</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:16px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">BIMI Coverage</span>
+        </div>
+        <div style="position:relative;height:150px;"><canvas id="bimi-pie-chart"></canvas></div>
+        <script type="application/json" id="bimi-pie-data">{{.BIMIPieData}}</script>
+      </div>
+
+      <!-- §08 MTA-STS Coverage -->
+      <div style="padding:14px 22px;border-bottom:1px solid #1a1a1e;flex-shrink:0;">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;">
+          <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;08</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:16px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">MTA-STS Coverage</span>
+        </div>
+        <div style="position:relative;height:150px;"><canvas id="mtasts-pie-chart"></canvas></div>
+        <script type="application/json" id="mtasts-pie-data">{{.MTASTSPieData}}</script>
+      </div>
+
+      <!-- §09 Recent reports -->
+      <div style="padding:16px 22px;flex:1;">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px;">
+          <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;09</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:18px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">Tattletales</span>
+          <span style="font-size:11px;color:#6e6a60;">// who told us what</span>
+        </div>
+        {{if .RecentReports}}
+        <div style="font-size:12px;">
+          {{range .RecentReports}}
+          <div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px dotted #1a1a1e;align-items:center;">
+            <span style="color:#5a8a5a;">&#x2713;</span>
+            <a href="/reports?org_name={{.OrgName}}" style="flex:1;color:#d4d0c8;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{.OrgName}}</a>
+            <a href="/domains/{{.Domain}}" style="color:#6e6a60;font-size:11px;text-decoration:none;">{{.Domain}}</a>
+          </div>
+          {{end}}
+        </div>
+        {{else}}
+        <div style="color:#6e6a60;font-size:12px;font-style:italic;">// no reports received. ominous silence.</div>
+        {{end}}
+      </div>
+
+      <!-- Footer prompt -->
+      <div style="padding:10px 22px;border-top:2px solid #c1121f;font-size:11px;color:#6e6a60;display:flex;justify-content:space-between;flex-shrink:0;">
+        <span><span style="color:#c1121f;">$</span> _</span>
+        <span>q to quit &middot; everything is fine &middot; probably</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var raw = document.getElementById('trend-data');
+  if (!raw) return;
+  var data;
+  try { data = JSON.parse(raw.textContent); } catch(e) { return; }
+
+  // ASCII sparkline
+  var chars = '▁▂▃▄▅▆▇█';
+  var allVals = (data.passed || []).map(function(p,i){ return p + (data.failed[i]||0); });
+  var maxVal = Math.max.apply(null, allVals) || 1;
+  var spark = allVals.map(function(v){ return chars[Math.min(7, Math.floor(v/maxVal*7.999))]; }).join('');
+  var el = document.getElementById('goth-sparkline');
+  if (el) el.textContent = spark;
+
+  initThemedTrendChart('trend-chart', data, 'goth');
+});
+</script>

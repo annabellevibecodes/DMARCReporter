@@ -1,0 +1,4 @@
+dmarc.db*
+dmarcreporter
+run-dmarcreporter.sh
+session.txt

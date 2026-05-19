@@ -1,0 +1,73 @@
+<h1>Source IPs</h1>
+
+{{if .Disposition}}
+<div class="flash flash-info">Showing sources with <strong>{{.Disposition}}</strong> disposition only. <a href="/sources">Clear filter</a></div>
+{{end}}
+{{if .Country}}
+<div class="flash flash-info">Showing sources from country <strong>{{.Country}}</strong>. <a href="/sources">Clear filter</a></div>
+{{end}}
+
+<form class="filter-form" method="get" action="/sources">
+    {{if .Disposition}}<input type="hidden" name="disposition" value="{{.Disposition}}">{{end}}
+    <div class="filter-row">
+        <select name="envelope_from" style="max-width:260px">
+            <option value="">— All envelope_from domains —</option>
+            {{range .EnvelopeFromDomains}}
+            <option value="{{.}}" {{if eq . $.EnvelopeFrom}}selected{{end}}>{{.}}</option>
+            {{end}}
+        </select>
+        <input type="text" name="ip" value="{{.SourceIP}}" placeholder="Filter by IP" style="max-width:260px;" autocomplete="off" spellcheck="false">
+        <button type="submit">Filter</button>
+        {{if or .EnvelopeFrom .SourceIP}}<a href="/sources{{if .Disposition}}?disposition={{.Disposition}}{{end}}" role="button" class="secondary outline">Clear</a>{{end}}
+    </div>
+</form>
+
+{{if .Sources}}
+<table>
+    <thead>
+        <tr>
+            <th>Source IP</th>
+            <th>Total Messages</th>
+            <th>Passed</th>
+            <th>Failed</th>
+            <th>Fail Rate</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .Sources}}
+        <tr class="{{if ge .FailRatePct 10.0}}row-fail{{else if gt .FailRatePct 0.0}}row-warn{{end}}">
+            <td><a href="/sources/{{.SourceIP}}">{{.SourceIP}}</a></td>
+            <td>{{.TotalMessages}}</td>
+            <td>{{.Passed}}</td>
+            <td>{{.Failed}}</td>
+            <td>
+                {{if ge .FailRatePct 10.0}}
+                <span class="badge badge-fail">{{printf "%.1f" .FailRatePct}}%</span>
+                {{else if gt .FailRatePct 0.0}}
+                <span class="badge badge-warn">{{printf "%.1f" .FailRatePct}}%</span>
+                {{else}}
+                <span class="badge badge-pass">0.0%</span>
+                {{end}}
+            </td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+{{if gt .TotalPages 1}}
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:1rem;">
+    {{if gt .Page 1}}
+    <a href="/sources?page={{add .Page -1}}{{if .EnvelopeFrom}}&envelope_from={{.EnvelopeFrom}}{{end}}{{if .SourceIP}}&ip={{.SourceIP}}{{end}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}{{if .Country}}&country={{.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">← Prev</a>
+    {{end}}
+    {{range .PageNums}}
+    {{if eq . $.Page}}<span style="padding:2px 8px;font-weight:700;">{{.}}</span>{{else}}<a href="/sources?page={{.}}{{if $.EnvelopeFrom}}&envelope_from={{$.EnvelopeFrom}}{{end}}{{if $.SourceIP}}&ip={{$.SourceIP}}{{end}}{{if $.Disposition}}&disposition={{$.Disposition}}{{end}}{{if $.Country}}&country={{$.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">{{.}}</a>{{end}}
+    {{end}}
+    {{if lt .Page .TotalPages}}
+    <a href="/sources?page={{add .Page 1}}{{if .EnvelopeFrom}}&envelope_from={{.EnvelopeFrom}}{{end}}{{if .SourceIP}}&ip={{.SourceIP}}{{end}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}{{if .Country}}&country={{.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">Next →</a>
+    <a href="/sources?page={{.TotalPages}}{{if .EnvelopeFrom}}&envelope_from={{.EnvelopeFrom}}{{end}}{{if .SourceIP}}&ip={{.SourceIP}}{{end}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}{{if .Country}}&country={{.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">Last ({{.TotalPages}})</a>
+    {{end}}
+    <span style="font-size:0.9rem;color:var(--pico-muted-color);margin-left:4px;">Page {{.Page}} of {{.TotalPages}} &middot; {{.Total}} senders</span>
+</div>
+{{end}}
+{{else}}
+<p>No source data yet.</p>
+{{end}}

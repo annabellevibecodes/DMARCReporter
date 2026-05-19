@@ -1,0 +1,169 @@
+/* DMARC Reporter styles */
+
+/* Design tokens */
+:root {
+    --color-pass: #198754;
+    --color-fail: #dc3545;
+    --color-warn: #fd7e14;
+    --color-none: #6c757d;
+    --row-pass-bg: rgba(25, 135, 84, 0.06);
+    --row-warn-bg: rgba(253, 126, 20, 0.08);
+    --row-fail-bg: rgba(220, 53, 69, 0.08);
+}
+
+/* KPI grid */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.kpi-card {
+    border-left: 4px solid var(--pico-primary-background, #1095c1);
+}
+
+.kpi-card.pass { border-left-color: var(--color-pass); }
+.kpi-card.warn { border-left-color: var(--color-warn); }
+.kpi-card.fail { border-left-color: var(--color-fail); }
+
+.kpi-value {
+    font-size: 2rem;
+    font-weight: bold;
+    margin: 0;
+}
+
+/* Two-column chart grid */
+.chart-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+@media (max-width: 768px) {
+    .chart-grid { grid-template-columns: 1fr; }
+}
+
+/* Compliance badge pill */
+.badge {
+    display: inline-block;
+    padding: 0.15em 0.55em;
+    border-radius: 1em;
+    font-size: 0.85em;
+    font-weight: bold;
+}
+
+.badge-pass { background: var(--color-pass); color: #fff; }
+.badge-warn { background: var(--color-warn); color: #fff; }
+.badge-fail { background: var(--color-fail); color: #fff; }
+
+/* Pass-rate progress bar */
+.pass-rate-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+progress.pass-bar {
+    accent-color: var(--color-pass);
+    width: 80px;
+    height: 0.6rem;
+}
+
+/* Row tinting by compliance */
+tr.row-pass { background-color: var(--row-pass-bg); }
+tr.row-warn { background-color: var(--row-warn-bg); }
+tr.row-fail { background-color: var(--row-fail-bg); }
+
+/* Result colours */
+.pass { color: var(--color-pass); font-weight: bold; }
+.fail { color: var(--color-fail); font-weight: bold; }
+.warn { color: var(--color-warn); font-weight: bold; }
+
+.result-pass { color: var(--color-pass); }
+.result-fail { color: var(--color-fail); }
+.result-none { color: var(--color-none); }
+
+.disposition-none        { color: var(--color-none); }
+.disposition-quarantine  { color: var(--color-warn); }
+.disposition-reject      { color: var(--color-fail); font-weight: bold; }
+
+.policy-none        { color: var(--color-none); }
+.policy-quarantine  { color: var(--color-warn); }
+.policy-reject      { color: var(--color-fail); font-weight: bold; }
+
+/* Health status banner */
+.health-banner {
+    padding: 0.75rem 1rem;
+    border-radius: var(--pico-border-radius, 4px);
+    margin-bottom: 1.25rem;
+    border-left: 5px solid;
+    font-weight: 500;
+}
+.health-excellent { background: rgba(25, 135, 84, 0.1);  border-color: var(--color-pass); color: var(--color-pass); }
+.health-warning   { background: rgba(253, 126, 20, 0.1); border-color: var(--color-warn); color: var(--color-warn); }
+.health-critical  { background: rgba(220, 53, 69, 0.1);  border-color: var(--color-fail); color: var(--color-fail); }
+
+/* Theme toggle buttons */
+.theme-toggle { display: flex; gap: 0.15rem; align-items: center; }
+.theme-btn {
+    padding: 0.2rem 0.45rem !important;
+    font-size: 0.9rem;
+    line-height: 1;
+    border-radius: var(--pico-border-radius, 4px) !important;
+    margin: 0 !important;
+}
+.theme-btn[aria-pressed="true"] {
+    background: var(--pico-primary-background, #1095c1) !important;
+    color: #fff !important;
+    border-color: var(--pico-primary-background, #1095c1) !important;
+}
+
+/* Nav upload link as button */
+.nav-upload { font-size: 0.875rem; padding: 0.3rem 0.75rem !important; }
+
+/* Flash messages */
+.flash {
+    padding: 0.75rem 1rem;
+    border-radius: var(--pico-border-radius, 4px);
+    margin-bottom: 1rem;
+    border-left: 4px solid;
+}
+.flash-success { background: #d4edda; border-color: #28a745; color: #155724; }
+.flash-error   { background: #f8d7da; border-color: #dc3545; color: #721c24; }
+.flash-warning { background: #fff3cd; border-color: #ffc107; color: #856404; }
+.flash-info    { background: #d1ecf1; border-color: #17a2b8; color: #0c5460; }
+
+/* Filter form */
+.filter-form { margin-bottom: 1.5rem; }
+
+/* Navigation form buttons */
+nav form button { margin: 0; padding: 0.4rem 0.8rem; }
+
+/* Definition list */
+dl { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 1rem; }
+dt { font-weight: bold; }
+
+/* DMARC record tag list */
+.dmarc-tags {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.3rem 1.5rem;
+    font-size: 0.95rem;
+    margin: 0;
+}
+.dmarc-tags dt { color: var(--pico-muted-color, #6c757d); font-weight: normal; white-space: nowrap; }
+.dmarc-tags dd { word-break: break-all; margin: 0; }
+
+/* IP intelligence card */
+.ip-info-card { margin-bottom: 1.5rem; }
+.ip-info-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.3rem 1.5rem;
+    font-size: 0.95rem;
+}
+.ip-info-grid dt { color: var(--pico-muted-color, #6c757d); font-weight: normal; white-space: nowrap; }
+.ip-info-grid dd { font-family: monospace; word-break: break-all; }
+

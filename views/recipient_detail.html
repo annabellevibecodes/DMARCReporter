@@ -1,0 +1,84 @@
+<h1>Recipient Domain: {{.Domain}}</h1>
+<p>All DMARC records where <code>envelope_to</code> matches this domain.</p>
+
+<div class="kpi-grid">
+    <article class="kpi-card">
+        <header>Total Messages</header>
+        <p class="kpi-value">{{.TotalMessages}}</p>
+    </article>
+    <article class="kpi-card {{if ge .PassRate 95.0}}pass{{else if ge .PassRate 80.0}}warn{{else}}fail{{end}}">
+        <header>Pass Rate</header>
+        <p class="kpi-value">{{printf "%.1f" .PassRate}}%</p>
+    </article>
+    <article class="kpi-card">
+        <header>Sending Domains</header>
+        <p class="kpi-value">{{.UniqueSenders}}</p>
+    </article>
+    <article class="kpi-card">
+        <header>Source IPs</header>
+        <p class="kpi-value">{{.UniqueIPs}}</p>
+    </article>
+</div>
+
+{{if .Senders}}
+<h2>Sending Domains</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Sending Domain (header_from)</th>
+            <th>Messages</th>
+            <th>Passed</th>
+            <th>Failed</th>
+            <th>Pass Rate</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .Senders}}
+        <tr class="{{if ge .PassRate 95.0}}row-pass{{else if ge .PassRate 80.0}}row-warn{{else}}row-fail{{end}}">
+            <td><a href="/domains/{{.SendingDomain}}">{{.SendingDomain}}</a></td>
+            <td>{{.TotalMessages}}</td>
+            <td>{{.Passed}}</td>
+            <td>{{.Failed}}</td>
+            <td>
+                <progress class="pass-bar" value="{{printf "%.0f" .PassRate}}" max="100"></progress>
+                <span class="badge {{if ge .PassRate 95.0}}badge-pass{{else if ge .PassRate 80.0}}badge-warn{{else}}badge-fail{{end}}">{{printf "%.1f" .PassRate}}%</span>
+            </td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+{{end}}
+
+{{if .Records}}
+<h2>Records</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Source IP</th>
+            <th>Count</th>
+            <th>Sending Domain</th>
+            <th>Disposition</th>
+            <th>DKIM</th>
+            <th>SPF</th>
+            <th>Reporter</th>
+            <th>Period</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .Records}}
+        <tr>
+            <td><a href="/sources/{{.SourceIP}}">{{.SourceIP}}</a></td>
+            <td>{{.Count}}</td>
+            <td><a href="/domains/{{.HeaderFrom}}">{{.HeaderFrom}}</a></td>
+            <td><span class="disposition-{{.Disposition}}">{{.Disposition}}</span></td>
+            <td><span class="result-{{.EvalDKIM}}">{{.EvalDKIM}}</span></td>
+            <td><span class="result-{{.EvalSPF}}">{{.EvalSPF}}</span></td>
+            <td>{{.OrgName}}</td>
+            <td>{{unixTime .DateRangeBegin}} – {{unixTime .DateRangeEnd}}</td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+{{else}}
+<p>No records found for this recipient domain.</p>
+{{end}}

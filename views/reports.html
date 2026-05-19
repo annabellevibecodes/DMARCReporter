@@ -1,0 +1,86 @@
+<h1>Reports</h1>
+
+<form method="GET" action="/reports" class="filter-form">
+    <div class="grid">
+        <label>
+            Domain
+            <select name="domain">
+                <option value="">— All domains —</option>
+                {{range .ReportDomains}}
+                <option value="{{.}}" {{if eq . $.Domain}}selected{{end}}>{{.}}</option>
+                {{end}}
+            </select>
+        </label>
+        <label>
+            Reporting Org
+            <select name="org_name">
+                <option value="">— All orgs —</option>
+                {{range .ReportOrgs}}
+                <option value="{{.}}" {{if eq . $.OrgName}}selected{{end}}>{{.}}</option>
+                {{end}}
+            </select>
+        </label>
+        <label>
+            Report ID
+            <input type="text" name="report_id" value="{{.ReportID}}" placeholder="partial match…">
+        </label>
+        <label>
+            From
+            <input type="date" name="date_from" value="{{.DateFrom}}">
+        </label>
+        <label>
+            To
+            <input type="date" name="date_to" value="{{.DateTo}}">
+        </label>
+        <label>&nbsp;
+            <button type="submit">Filter</button>
+        </label>
+    </div>
+</form>
+
+<p>{{.Total}} report(s) found.</p>
+
+{{if .Reports}}
+<table>
+    <thead>
+        <tr>
+            <th>Domain</th>
+            <th>Org</th>
+            <th>Report ID</th>
+            <th>Period Begin</th>
+            <th>Period End</th>
+            <th>Policy</th>
+            <th>Envelope To</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .Reports}}
+        <tr>
+            <td><a href="/domains/{{.Domain}}">{{.Domain}}</a></td>
+            <td>{{.OrgName}}</td>
+            <td><a href="/reports/{{.ID}}">{{.ReportID}}</a></td>
+            <td>{{.BeginTime.Format "2006-01-02"}}</td>
+            <td>{{.EndTime.Format "2006-01-02"}}</td>
+            <td><span class="policy-{{.Policy}}">{{.Policy}}</span></td>
+            <td>{{range splitComma .EnvelopeToDomains}}<a href="/recipients/{{.}}">{{.}}</a><br>{{end}}</td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:1rem;">
+    {{if gt .Page 1}}
+    <a href="?page={{add .Page -1}}&domain={{.Domain}}&org_name={{.OrgName}}&report_id={{.ReportID}}&date_from={{.DateFrom}}&date_to={{.DateTo}}" role="button" class="outline secondary" style="padding:2px 10px;">← Prev</a>
+    {{end}}
+    {{range .PageNums}}
+    {{if eq . $.Page}}<span style="padding:2px 8px;font-weight:700;">{{.}}</span>{{else}}<a href="?page={{.}}&domain={{$.Domain}}&org_name={{$.OrgName}}&report_id={{$.ReportID}}&date_from={{$.DateFrom}}&date_to={{$.DateTo}}" role="button" class="outline secondary" style="padding:2px 10px;">{{.}}</a>{{end}}
+    {{end}}
+    {{if lt .Page .TotalPages}}
+    <a href="?page={{add .Page 1}}&domain={{.Domain}}&org_name={{.OrgName}}&report_id={{.ReportID}}&date_from={{.DateFrom}}&date_to={{.DateTo}}" role="button" class="outline secondary" style="padding:2px 10px;">Next →</a>
+    <a href="?page={{.TotalPages}}&domain={{.Domain}}&org_name={{.OrgName}}&report_id={{.ReportID}}&date_from={{.DateFrom}}&date_to={{.DateTo}}" role="button" class="outline secondary" style="padding:2px 10px;">Last ({{.TotalPages}})</a>
+    {{end}}
+    <span style="font-size:0.9rem;color:var(--pico-muted-color);margin-left:4px;">Page {{.Page}} of {{.TotalPages}}</span>
+</div>
+{{else}}
+<p>No reports found. <a href="/upload">Upload a report</a>{{if .IMAPEnabled}} or <form method="POST" action="/fetch" style="display:inline"><input type="hidden" name="_csrf" value="{{.CSRFToken}}"><button class="outline" type="submit">fetch from IMAP</button></form>{{end}}.</p>
+{{end}}

@@ -1,0 +1,352 @@
+<div style="min-height:100vh;font-family:'Source Serif 4','Source Serif Pro',Georgia,serif;color:#1a1a1a;background:#f6f1e7;position:relative;">
+
+  <!-- NAV / MASTHEAD -->
+  <div style="padding:16px 56px 0;background:#f6f1e7;">
+    <!-- Utility nav row -->
+    <div style="display:flex;justify-content:space-between;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;color:#6b5e3c;letter-spacing:.08em;margin-bottom:8px;">
+      <span>Vol. III &middot; No. ix</span>
+      <nav style="display:flex;gap:20px;align-items:center;">
+        <a href="/"         style="color:#0e2a4a;text-decoration:none;font-style:normal;font-weight:600;">Dashboard</a>
+        <a href="/reports"  style="color:#6b5e3c;text-decoration:none;font-style:italic;">Reports</a>
+        <a href="/domains"  style="color:#6b5e3c;text-decoration:none;font-style:italic;">Domains</a>
+        <a href="/sources"  style="color:#6b5e3c;text-decoration:none;font-style:italic;">Senders</a>
+        <a href="/help"     style="color:#6b5e3c;text-decoration:none;font-style:italic;">Help</a>
+        <a href="/upload"   style="color:#0e2a4a;text-decoration:none;font-style:normal;font-weight:600;">Upload &#8599;</a>
+        {{if .IMAPEnabled}}
+        <form method="POST" action="/fetch" style="margin:0">
+          <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+          <button type="submit" style="background:transparent;border:1px solid #0e2a4a;color:#0e2a4a;padding:3px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;cursor:pointer;">Fetch</button>
+        </form>
+        {{end}}
+        <a href="/enrich" style="color:#0e2a4a;text-decoration:none;font-style:normal;font-weight:600;">Enrich</a>
+        <div style="display:flex;border:1px solid #0e2a4a;">
+          <a href="/theme?t=pink" style="padding:3px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;color:#6b5e3c;text-decoration:none;border-right:1px solid #0e2a4a;">Pink</a>
+          <a href="/theme?t=blue" style="padding:3px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;background:#0e2a4a;color:#f6f1e7;text-decoration:none;border-right:1px solid #0e2a4a;">Blue</a>
+          <a href="/theme?t=goth" style="padding:3px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;color:#6b5e3c;text-decoration:none;">Goth</a>
+        </div>
+      </nav>
+      <span>An Aggregate Authentication Intelligencer</span>
+    </div>
+
+    <!-- Thick-thin rule -->
+    <div style="height:3px;background:#0e2a4a;margin-bottom:4px;"></div>
+    <div style="height:1px;background:#0e2a4a;margin-bottom:6px;"></div>
+
+    <!-- Title -->
+    <h1 style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:44px;line-height:1;color:#0e2a4a;margin:4px 0 2px;letter-spacing:-.005em;text-align:center;">The DMARC Reporter</h1>
+    <div style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:14px;color:#6b1f24;margin:2px 0 6px;text-align:center;">
+      Comprising a faithful account of all electronic correspondence dispatched in the name of
+      {{if .TopDomains -}}
+        {{range $i, $d := .TopDomains}}<b style="color:#0e2a4a;">{{$d}}</b>{{if lt (add $i 1) (len $.TopDomains)}}, {{end}}{{end}}{{if .MoreDomains}} <span style="font-style:normal;">and others</span>{{end}}
+      {{- else}}<b style="color:#0e2a4a;">your domains</b>{{end}},
+      with such observations as may concern the diligent administrator.
+    </div>
+
+    <!-- Thin-thick rule -->
+    <div style="height:1px;background:#0e2a4a;margin-bottom:4px;"></div>
+    <div style="height:3px;background:#0e2a4a;margin-bottom:0;"></div>
+  </div>
+
+  {{if .FlashMsg}}
+  <div style="margin:12px 56px 0;padding:10px 16px;border-left:4px solid #6b1f24;font-style:italic;font-size:13px;background:rgba(107,31,36,0.06);color:#6b1f24;">{{.FlashMsg}}</div>
+  {{end}}
+
+  <form method="GET" action="/" style="margin:10px 56px 0;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#6b5e3c;">
+    <span>Reporting period:</span>
+    <select name="period" onchange="this.form.submit()" style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#0e2a4a;background:#f6f1e7;border:1px solid #0e2a4a;padding:2px 8px;cursor:pointer;outline:none;">
+      {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+    {{if .EFDomains}}
+    <span>Sender domain:</span>
+    <select name="ef" onchange="this.form.submit()" style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#0e2a4a;background:#f6f1e7;border:1px solid #0e2a4a;padding:2px 8px;cursor:pointer;outline:none;">
+      <option value="">All domains</option>
+      {{range .EFDomains}}<option value="{{.}}"{{if eq . $.SelectedEF}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+    {{end}}
+    {{if .SelectedEF}}<a href="/?period={{.SelectedPeriod}}" style="color:#6b1f24;text-decoration:none;">&#10005; clear sender</a>{{end}}
+  </form>
+
+  <!-- CONTENT GRID -->
+  <div style="display:grid;grid-template-columns:1fr 340px;gap:22px;padding:16px 56px 32px;min-height:0;">
+
+    <!-- LEFT COLUMN -->
+    <div style="border-right:1px solid #d8cfb7;padding-right:22px;display:flex;flex-direction:column;gap:14px;min-width:0;">
+
+      <!-- § I Summary -->
+      <div>
+        <div style="display:grid;grid-template-columns:54px 1fr;align-items:baseline;column-gap:10px;margin-bottom:8px;">
+          <span style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#b08d3e;letter-spacing:.16em;text-transform:uppercase;">&sect;&nbsp;I</span>
+          <span style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:20px;color:#0e2a4a;line-height:1.1;">A Summary of the Period&rsquo;s Authentications</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid #0e2a4a;border-bottom:1px solid #0e2a4a;">
+          <div style="padding:10px 16px;border-right:1px solid #d8cfb7;">
+            <div style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;color:#6b5e3c;letter-spacing:.04em;">Messages Examined</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-weight:500;font-size:30px;color:#0e2a4a;line-height:1;margin-top:4px;">{{commaN .Stats.TotalMessages}}</div>
+            <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:11px;color:#6b5e3c;margin-top:4px;">across all reporters</div>
+          </div>
+          <div style="padding:10px 16px;border-right:1px solid #d8cfb7;">
+            <div style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;color:#6b5e3c;letter-spacing:.04em;">Duly Authenticated</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-weight:500;font-size:30px;color:#0e2a4a;line-height:1;margin-top:4px;">{{printf "%.3f%%" .Stats.PassRate}}</div>
+            <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:11px;color:#6b5e3c;margin-top:4px;">aligned with both SPF &amp; DKIM</div>
+          </div>
+          <div style="padding:10px 16px;border-right:1px solid #d8cfb7;">
+            <div style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;color:#6b5e3c;letter-spacing:.04em;">Held in Quarantine</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-weight:500;font-size:30px;color:#0e2a4a;line-height:1;margin-top:4px;"><a href="/sources?disposition=quarantine" style="color:#0e2a4a;text-decoration:none;">{{commaN .Stats.Quarantined}}</a></div>
+            <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:11px;color:#6b5e3c;margin-top:4px;">diverted from the inbox proper</div>
+          </div>
+          <div style="padding:10px 16px;">
+            <div style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;color:#6b5e3c;letter-spacing:.04em;">Outright Rejected</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-weight:500;font-size:30px;color:#6b1f24;line-height:1;margin-top:4px;"><a href="/sources?disposition=reject" style="color:#6b1f24;text-decoration:none;">{{commaN .Stats.Rejected}}</a></div>
+            <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:11px;color:#6b5e3c;margin-top:4px;">dispensed with at the gate</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#6b5e3c;font-style:italic;margin-top:6px;text-align:right;">
+          &#x2020; Encompassing {{commaN .Stats.TotalReports}} reports from {{commaN .Stats.TotalReporters}} organisations, across {{commaN .Stats.TotalDomains}} domain(s).
+        </div>
+      </div>
+
+      <!-- § II Chart -->
+      <div>
+        <div style="display:grid;grid-template-columns:54px 1fr;align-items:baseline;column-gap:10px;margin-bottom:6px;">
+          <span style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#b08d3e;letter-spacing:.16em;text-transform:uppercase;">&sect;&nbsp;II</span>
+          <div>
+            <span style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:20px;color:#0e2a4a;line-height:1.1;">The Weekly Cadence of Mail</span>
+            <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:12px;color:#6b5e3c;margin-top:2px;">Volume by week, observed across the past ninety (90) days</div>
+          </div>
+        </div>
+        <div style="background:#fbf6ec;border:1px solid #d8cfb7;padding:10px;">
+          <div style="position:relative;height:180px;width:100%;"><canvas id="trend-chart"></canvas></div>
+          <script type="application/json" id="trend-data">{{.TrendData}}</script>
+        </div>
+        <div style="font-size:11px;color:#6b5e3c;font-style:italic;margin-top:4px;display:flex;gap:16px;">
+          <span><span style="display:inline-block;width:14px;height:1.5px;background:#0e2a4a;vertical-align:middle;margin-right:4px;"></span>Total volume.</span>
+          <span><span style="display:inline-block;width:14px;height:4px;background:#6b1f24;opacity:.6;vertical-align:middle;margin-right:4px;"></span>Failures of authentication.</span>
+        </div>
+      </div>
+
+      <!-- § III Roster -->
+      <div>
+        <div style="display:grid;grid-template-columns:54px 1fr;align-items:baseline;column-gap:10px;margin-bottom:6px;">
+          <span style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#b08d3e;letter-spacing:.16em;text-transform:uppercase;">&sect;&nbsp;III</span>
+          <div>
+            <span style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:20px;color:#0e2a4a;line-height:1.1;">A Roster of Sending Servers</span>
+            <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:12px;color:#6b5e3c;margin-top:2px;">Together with their alignments, ordered by failure rate.</div>
+          </div>
+        </div>
+        {{if .TopFailingSources}}
+        <table style="width:100%;border-collapse:collapse;font-family:'Source Serif 4',serif;font-size:13px;">
+          <thead>
+            <tr style="border-top:1px solid #0e2a4a;border-bottom:1px solid #0e2a4a;">
+              <th style="text-align:left;padding:5px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:500;font-size:12px;color:#6b5e3c;">Server, by address</th>
+              <th style="text-align:right;padding:5px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:500;font-size:12px;color:#6b5e3c;">Messages</th>
+              <th style="text-align:right;padding:5px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:500;font-size:12px;color:#6b5e3c;">Failed</th>
+              <th style="text-align:left;padding:5px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:500;font-size:12px;color:#6b5e3c;">Disposition</th>
+            </tr>
+          </thead>
+          <tbody>
+          {{range .TopFailingSources}}
+            <tr style="border-bottom:1px dotted #d8cfb7;">
+              <td style="padding:5px 10px;"><a href="/sources/{{.SourceIP}}" style="color:#0e2a4a;text-decoration:none;">{{.SourceIP}}</a></td>
+              <td style="padding:5px 10px;text-align:right;font-variant-numeric:tabular-nums;">{{commaN .TotalMessages}}</td>
+              <td style="padding:5px 10px;text-align:right;font-variant-numeric:tabular-nums;color:{{if ge .FailRate 0.01}}#6b1f24{{else}}#1a1a1a{{end}};">{{commaN .Failed}}</td>
+              <td style="padding:5px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:{{if ge .FailRate 0.5}}#6b1f24{{else if ge .FailRate 0.01}}#b08d3e{{else}}#0e2a4a{{end}};">
+                {{if ge .FailRate 0.5}}turned away{{else if ge .FailRate 0.01}}partially aligned{{else}}in good standing{{end}}
+              </td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{else}}
+        <p style="font-family:'Source Serif 4',serif;font-style:italic;font-size:13px;color:#6b5e3c;">No servers of notable concern were identified in the present period.</p>
+        {{end}}
+      </div>
+      <!-- § IV Top Senders by Volume -->
+      <div>
+        <div style="display:grid;grid-template-columns:54px 1fr;align-items:baseline;column-gap:10px;margin-bottom:6px;">
+          <span style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#b08d3e;letter-spacing:.16em;text-transform:uppercase;">&sect;&nbsp;IV</span>
+          <div>
+            <span style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:20px;color:#0e2a4a;line-height:1.1;">Top Sending Sources by Volume</span>
+            <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:12px;color:#6b5e3c;margin-top:2px;">Ordered by total message volume, greatest first.</div>
+          </div>
+        </div>
+        {{if .TopByVolume}}
+        <table style="width:100%;border-collapse:collapse;font-family:'Source Serif 4',serif;font-size:13px;">
+          <thead>
+            <tr style="border-top:1px solid #0e2a4a;border-bottom:1px solid #0e2a4a;">
+              <th style="text-align:left;padding:5px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:500;font-size:12px;color:#6b5e3c;">Source</th>
+              <th style="text-align:right;padding:5px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:500;font-size:12px;color:#6b5e3c;">Messages</th>
+              <th style="text-align:right;padding:5px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:500;font-size:12px;color:#6b5e3c;">Pass rate</th>
+            </tr>
+          </thead>
+          <tbody>
+          {{range .TopByVolume}}
+            <tr style="border-bottom:1px dotted #d8cfb7;">
+              <td style="padding:5px 10px;"><a href="/sources/{{.SourceIP}}" style="color:#0e2a4a;text-decoration:none;">{{.SourceIP}}</a></td>
+              <td style="padding:5px 10px;text-align:right;font-variant-numeric:tabular-nums;">{{commaN .TotalMessages}}</td>
+              <td style="padding:5px 10px;text-align:right;font-variant-numeric:tabular-nums;">{{printf "%.1f%%" .PassRate}}</td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{else}}
+        <p style="font-family:'Source Serif 4',serif;font-style:italic;font-size:13px;color:#6b5e3c;">No sending sources recorded for this period.</p>
+        {{end}}
+      </div>
+
+      <!-- § V Volume by Geography -->
+      <div style="flex:1;">
+        <div style="display:grid;grid-template-columns:54px 1fr;align-items:baseline;column-gap:10px;margin-bottom:6px;">
+          <span style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#b08d3e;letter-spacing:.16em;text-transform:uppercase;">&sect;&nbsp;V</span>
+          <div>
+            <span style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:20px;color:#0e2a4a;line-height:1.1;">Volume by Geography</span>
+            <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:12px;color:#6b5e3c;margin-top:2px;">Message volume distributed by originating country.</div>
+          </div>
+        </div>
+        {{if .GeoDistribution}}
+        <div style="border-top:1px solid #0e2a4a;border-bottom:1px solid #0e2a4a;">
+          {{range .GeoDistribution}}
+          <div style="display:flex;align-items:baseline;gap:10px;padding:5px 4px;border-bottom:1px dotted #d8cfb7;">
+            <a href="/sources?country={{.Country}}" style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:14px;color:#0e2a4a;text-decoration:none;min-width:36px;">{{.Country}}</a>
+            <span style="flex:1;font-family:'Source Serif 4',serif;font-size:12px;font-variant-numeric:tabular-nums;color:#3a3327;">{{commaN .TotalMessages}} messages</span>
+          </div>
+          {{end}}
+        </div>
+        {{else}}
+        <p style="font-family:'Source Serif 4',serif;font-style:italic;font-size:13px;color:#6b5e3c;">No geographic data available. Visit sender detail pages to enrich IP information.</p>
+        {{end}}
+      </div>
+    </div>
+
+    <!-- RIGHT RAIL -->
+    <div style="display:flex;flex-direction:column;gap:14px;">
+
+      <!-- § VI Subject domain -->
+      <div style="background:#0e2a4a;color:#f6f1e7;padding:14px 18px;position:relative;">
+        <div style="position:absolute;top:6px;left:6px;right:6px;bottom:6px;border:1px solid #b08d3e;pointer-events:none;"></div>
+        <div style="position:relative;">
+          <div style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#b08d3e;">&sect;&nbsp;VI &mdash; The Subject Domain(s)</div>
+          <div style="font-family:'Cormorant Garamond',serif;font-weight:500;font-size:30px;color:#fff;margin-top:4px;letter-spacing:.01em;">
+            {{commaN .Stats.TotalDomains}} domain{{if gt .Stats.TotalDomains 1}}s{{end}}
+          </div>
+          <!-- Rule -->
+          <div style="display:flex;align-items:center;gap:10px;margin:6px 0;color:#b08d3e;">
+            <div style="flex:1;height:0;border-top:1px solid #b08d3e;"></div>
+            <span style="font-family:'Cormorant Garamond',serif;font-size:14px;color:#b08d3e;letter-spacing:.5em;">&#10022;</span>
+            <div style="flex:1;height:0;border-top:1px solid #b08d3e;"></div>
+          </div>
+          <p style="font-family:'Source Serif 4',serif;font-size:12px;line-height:1.45;margin:0;color:#e8dcc1;">
+            <span style="float:left;font-family:'Cormorant Garamond',serif;font-weight:600;font-size:36px;line-height:.85;margin-right:6px;margin-top:3px;color:#b08d3e;">O</span>
+            f the <b style="color:#fff;">{{commaN .Stats.TotalMessages}}</b> messages observed,
+            <b style="color:#fff;">{{printf "%.2f%%" .Stats.PassRate}}</b> were in good standing
+            with both the Sender Policy Framework and DomainKeys Identified Mail.
+          </p>
+        </div>
+      </div>
+
+      <!-- § VII Standing policy -->
+      <div style="border:1px solid #0e2a4a;padding:10px 14px;background:#fbf6ec;">
+        <div style="display:grid;grid-template-columns:54px 1fr;align-items:baseline;column-gap:10px;margin-bottom:6px;">
+          <span style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#b08d3e;letter-spacing:.16em;text-transform:uppercase;">&sect;&nbsp;VII</span>
+          <span style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:20px;color:#0e2a4a;line-height:1.1;">The Standing Policy</span>
+        </div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#6b5e3c;font-style:italic;">By order of the publisher</div>
+        <div style="font-family:'Cormorant Garamond',serif;font-weight:600;font-style:italic;font-size:28px;color:#0e2a4a;line-height:1;margin-top:2px;">
+          p = {{if .Policy}}{{.Policy}}{{else}}none{{end}}
+        </div>
+        <div style="font-family:'Source Serif 4',serif;font-size:12px;color:#3a3327;margin-top:6px;line-height:1.4;">
+          {{if eq .Policy "reject"}}Every non-aligned message is summarily refused at the gate; enforcement, one hundred per centum.
+          {{else if eq .Policy "quarantine"}}Mail failing alignment is conveyed unto the <em>spam</em> folder; enforcement, <b>one hundred (100) per centum</b>.
+          {{else}}Presently engaged in monitoring only; no mail is refused or diverted.{{end}}
+        </div>
+        <div style="display:flex;gap:0;margin-top:8px;border:1px solid #0e2a4a;">
+          <div style="flex:1;text-align:center;padding:6px 4px;{{if eq .Policy "none"}}background:#0e2a4a;color:#f6f1e7;{{else}}color:#0e2a4a;{{end}}font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;border-right:1px solid #0e2a4a;">none</div>
+          <div style="flex:1;text-align:center;padding:6px 4px;{{if eq .Policy "quarantine"}}background:#0e2a4a;color:#f6f1e7;{{else}}color:#0e2a4a;{{end}}font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;border-right:1px solid #0e2a4a;">quarantine</div>
+          <div style="flex:1;text-align:center;padding:6px 4px;{{if eq .Policy "reject"}}background:#0e2a4a;color:#f6f1e7;{{else}}color:#0e2a4a;{{end}}font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;">reject</div>
+        </div>
+      </div>
+
+      <!-- § VIII Domains at risk -->
+      <div>
+        <div style="display:grid;grid-template-columns:54px 1fr;align-items:baseline;column-gap:10px;margin-bottom:6px;">
+          <span style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#b08d3e;letter-spacing:.16em;text-transform:uppercase;">&sect;&nbsp;VIII</span>
+          <div>
+            <span style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:20px;color:#0e2a4a;line-height:1.1;">Domains of Concern</span>
+            <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:12px;color:#6b5e3c;margin-top:2px;">Those domains whose compliance falls below an acceptable threshold.</div>
+          </div>
+        </div>
+        {{if .DomainsAtRisk}}
+        <div style="border-top:1px solid #0e2a4a;border-bottom:1px solid #0e2a4a;">
+          {{range .DomainsAtRisk}}
+          <div style="display:flex;align-items:baseline;gap:8px;padding:6px 4px;border-bottom:1px dotted #d8cfb7;">
+            <a href="/domains/{{.Domain}}" style="flex:1;font-family:'Source Serif 4',serif;font-size:13px;color:#0e2a4a;text-decoration:none;">{{.Domain}}</a>
+            <span style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:20px;color:#6b1f24;font-variant-numeric:tabular-nums;">{{printf "%.1f%%" .PassRatePct}}</span>
+          </div>
+          {{end}}
+        </div>
+        {{else}}
+        <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:13px;color:#6b5e3c;padding:8px 0;">All domains stand in satisfactory compliance at this time.</div>
+        {{end}}
+      </div>
+
+      <!-- § IX Policy Distribution -->
+      <div style="border:1px solid #0e2a4a;padding:10px 14px;background:#fbf6ec;">
+        <div style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:16px;color:#0e2a4a;margin-bottom:6px;">DMARC Policy Distribution</div>
+        <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:11px;color:#6b5e3c;margin-bottom:8px;">Domains grouped by dominant policy.</div>
+        <div style="position:relative;height:160px;"><canvas id="policy-pie-chart"></canvas></div>
+        <script type="application/json" id="policy-pie-data">{{.PolicyPieData}}</script>
+      </div>
+
+      <!-- § X BIMI Coverage -->
+      <div style="border:1px solid #0e2a4a;padding:10px 14px;background:#fbf6ec;">
+        <div style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:16px;color:#0e2a4a;margin-bottom:6px;">BIMI Coverage</div>
+        <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:11px;color:#6b5e3c;margin-bottom:8px;">Domains with a BIMI record configured.</div>
+        <div style="position:relative;height:160px;"><canvas id="bimi-pie-chart"></canvas></div>
+        <script type="application/json" id="bimi-pie-data">{{.BIMIPieData}}</script>
+      </div>
+
+      <!-- § XI MTA-STS Coverage -->
+      <div style="border:1px solid #0e2a4a;padding:10px 14px;background:#fbf6ec;">
+        <div style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:16px;color:#0e2a4a;margin-bottom:6px;">MTA-STS Coverage</div>
+        <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:11px;color:#6b5e3c;margin-bottom:8px;">Domains with MTA-STS transport security configured.</div>
+        <div style="position:relative;height:160px;"><canvas id="mtasts-pie-chart"></canvas></div>
+        <script type="application/json" id="mtasts-pie-data">{{.MTASTSPieData}}</script>
+      </div>
+
+      <!-- Reports received -->
+      <div style="border-top:2px solid #0e2a4a;padding-top:10px;flex:1;">
+        <div style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;color:#6b5e3c;letter-spacing:.08em;">Reports lately received from</div>
+        {{if .RecentReports}}
+        <div style="display:flex;flex-wrap:wrap;column-gap:12px;margin-top:6px;font-family:'Source Serif 4',serif;font-size:12px;color:#1a1a1a;">
+          {{range .RecentReports}}<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;border-bottom:1px dotted #d8cfb7;gap:12px;"><a href="/reports" style="color:#0e2a4a;text-decoration:none;">{{.OrgName}}</a><a href="/domains/{{.Domain}}" style="color:#6b5e3c;font-style:italic;text-decoration:none;white-space:nowrap;">{{.Domain}}</a></div>{{end}}
+        </div>
+        {{else}}
+        <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:12px;color:#6b5e3c;margin-top:6px;">No reports have yet been received.</div>
+        {{end}}
+      </div>
+    </div>
+  </div>
+
+  <!-- Colophon -->
+  <div style="padding:0 56px 20px;">
+    <div style="display:flex;align-items:center;gap:10px;color:#0e2a4a;margin-bottom:4px;">
+      <div style="flex:1;height:0;border-top:1px solid #0e2a4a;"></div>
+      <span style="font-family:'Cormorant Garamond',serif;font-size:16px;color:#b08d3e;letter-spacing:.5em;">&#10086;</span>
+      <div style="flex:1;height:0;border-top:1px solid #0e2a4a;"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:11px;color:#6b5e3c;letter-spacing:.06em;">
+      <span>Aggregated from {{commaN .Stats.TotalReports}} report(s) across {{commaN .Stats.TotalDomains}} domain(s).</span>
+      <span>&mdash; Set in Cormorant &amp; Source Serif &mdash;</span>
+      <span>Page i of i</span>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var raw = document.getElementById('trend-data');
+  if (!raw) return;
+  var data;
+  try { data = JSON.parse(raw.textContent); } catch(e) { return; }
+  initThemedTrendChart('trend-chart', data, 'blue');
+});
+</script>

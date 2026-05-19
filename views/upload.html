@@ -1,0 +1,11 @@
+<h1>Upload DMARC Report</h1>
+<p>Supported formats: <code>.xml</code>, <code>.xml.gz</code>, <code>.gz</code>, <code>.zip</code></p>
+
+<form method="POST" action="/upload" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    <label>
+        Report file(s)
+        <input type="file" name="report" accept=".xml,.gz,.zip" multiple required>
+    </label>
+    <button type="submit">Upload</button>
+</form>

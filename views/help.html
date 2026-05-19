@@ -1,0 +1,277 @@
+<h1>Help &amp; Reference</h1>
+<p style="color:var(--pico-muted-color);">A guide to email authentication standards and how to interpret the data in this dashboard.</p>
+
+<nav style="margin-bottom:2rem;">
+  <small>
+    <a href="#spf">SPF</a> &middot;
+    <a href="#dkim">DKIM</a> &middot;
+    <a href="#dmarc">DMARC</a> &middot;
+    <a href="#policies">Policies</a> &middot;
+    <a href="#alignment">Alignment</a> &middot;
+    <a href="#disposition">Disposition</a> &middot;
+    <a href="#bimi">BIMI</a> &middot;
+    <a href="#mta-sts">MTA-STS</a> &middot;
+    <a href="#reading">Reading the Dashboard</a>
+  </small>
+</nav>
+
+<!-- SPF -->
+<article id="spf">
+  <header><strong>SPF — Sender Policy Framework</strong></header>
+  <p>
+    SPF lets a domain owner publish a list of IP addresses that are authorised to send mail on
+    behalf of that domain. When a receiving mail server gets a message, it looks up the SPF record
+    in DNS for the domain found in the <em>envelope from</em> (also called the <em>return-path</em>
+    or <em>bounce address</em>) and checks whether the sending IP is on the list.
+  </p>
+  <p><strong>How it works:</strong></p>
+  <ol>
+    <li>Sender publishes a <code>TXT</code> record at the domain root, e.g.<br>
+        <code>v=spf1 include:_spf.google.com ip4:203.0.113.10 ~all</code></li>
+    <li>Receiving server extracts the envelope-from domain and performs a DNS lookup.</li>
+    <li>If the sending IP matches, SPF <strong>passes</strong>; otherwise it <strong>fails</strong>.</li>
+  </ol>
+  <p><strong>Common SPF qualifiers:</strong></p>
+  <table>
+    <thead><tr><th>Qualifier</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+all</code> (or just <code>all</code>)</td><td>Pass — allow all (not recommended)</td></tr>
+      <tr><td><code>~all</code></td><td>SoftFail — treat unlisted senders with suspicion</td></tr>
+      <tr><td><code>-all</code></td><td>Fail — reject unlisted senders</td></tr>
+      <tr><td><code>?all</code></td><td>Neutral — no policy statement</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Limitation:</strong> SPF breaks when mail is forwarded, because the forwarding server's IP
+  is no longer in the original domain's SPF record. This is one reason DKIM and DMARC exist.</p>
+</article>
+
+<!-- DKIM -->
+<article id="dkim">
+  <header><strong>DKIM — DomainKeys Identified Mail</strong></header>
+  <p>
+    DKIM adds a cryptographic signature to outgoing messages. The signature is tied to a domain
+    and travels with the email, so it survives forwarding. The receiving server retrieves the
+    matching public key from DNS and verifies the signature.
+  </p>
+  <p><strong>How it works:</strong></p>
+  <ol>
+    <li>The sending mail server signs the message with a private key and adds a
+        <code>DKIM-Signature</code> header, referencing a selector and domain, e.g.<br>
+        <code>DKIM-Signature: v=1; a=rsa-sha256; d=example.com; s=mail; ...</code></li>
+    <li>The receiving server looks up the public key at
+        <code>&lt;selector&gt;._domainkey.&lt;domain&gt;</code> in DNS.</li>
+    <li>If the signature verifies, DKIM <strong>passes</strong>.</li>
+  </ol>
+  <p><strong>What DKIM protects:</strong> It proves the message body and selected headers were not
+  tampered with in transit, and that the signer controls the signing domain.</p>
+  <p><strong>What DKIM does not protect:</strong> The visible <em>From</em> header — that is handled
+  by DMARC alignment (see below).</p>
+</article>
+
+<!-- DMARC -->
+<article id="dmarc">
+  <header><strong>DMARC — Domain-based Message Authentication, Reporting &amp; Conformance</strong></header>
+  <p>
+    DMARC builds on SPF and DKIM by tying both checks to the domain visible in the email's
+    <em>From</em> header — the address your users actually see. It tells receiving servers what
+    to do when authentication fails, and instructs them to send aggregate reports back to you.
+  </p>
+  <p><strong>A DMARC record looks like:</strong></p>
+  <pre><code>_dmarc.example.com  TXT  "v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com; pct=100;"</code></pre>
+  <p><strong>Key tags:</strong></p>
+  <table>
+    <thead><tr><th>Tag</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>v</code></td><td>Protocol version — always <code>DMARC1</code></td></tr>
+      <tr><td><code>p</code></td><td>Policy for the domain: <code>none</code>, <code>quarantine</code>, or <code>reject</code></td></tr>
+      <tr><td><code>sp</code></td><td>Policy for subdomains (falls back to <code>p</code> if absent)</td></tr>
+      <tr><td><code>rua</code></td><td>Address(es) to receive aggregate reports (this dashboard reads these)</td></tr>
+      <tr><td><code>ruf</code></td><td>Address(es) to receive forensic (failure) reports</td></tr>
+      <tr><td><code>pct</code></td><td>Percentage of failing mail to apply the policy to (default: 100)</td></tr>
+      <tr><td><code>adkim</code></td><td>DKIM alignment mode: <code>r</code> (relaxed, default) or <code>s</code> (strict)</td></tr>
+      <tr><td><code>aspf</code></td><td>SPF alignment mode: <code>r</code> (relaxed, default) or <code>s</code> (strict)</td></tr>
+      <tr><td><code>fo</code></td><td>Failure reporting options (controls when <code>ruf</code> reports are sent)</td></tr>
+    </tbody>
+  </table>
+  <p>
+    A message <strong>passes DMARC</strong> when at least one of the following is true:
+  </p>
+  <ul>
+    <li>SPF passes <em>and</em> the envelope-from domain aligns with the header-from domain.</li>
+    <li>DKIM passes <em>and</em> the signing domain (<code>d=</code>) aligns with the header-from domain.</li>
+  </ul>
+</article>
+
+<!-- Policies -->
+<article id="policies">
+  <header><strong>DMARC Policies</strong></header>
+  <p>The <code>p=</code> tag controls what happens to mail that fails DMARC:</p>
+  <table>
+    <thead><tr><th>Policy</th><th>Effect on failing mail</th><th>Typical use</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>none</code></td>
+        <td>Deliver normally — no action taken on failures</td>
+        <td>Monitoring phase; safe to start here while you identify all legitimate senders</td>
+      </tr>
+      <tr>
+        <td><code>quarantine</code></td>
+        <td>Move to spam/junk folder</td>
+        <td>Transition phase once you are confident your legitimate mail passes</td>
+      </tr>
+      <tr>
+        <td><code>reject</code></td>
+        <td>Reject at the SMTP level — mail is not delivered</td>
+        <td>Full enforcement; best protection against spoofing</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    The recommended path is <strong>none &rarr; quarantine &rarr; reject</strong>. Move to the next
+    level only when your DMARC reports show consistently high pass rates from all legitimate sources.
+  </p>
+</article>
+
+<!-- Alignment -->
+<article id="alignment">
+  <header><strong>Alignment</strong></header>
+  <p>
+    Alignment is the check that connects SPF/DKIM results to the domain in the visible
+    <em>From</em> header. Without alignment, a spammer could set up SPF/DKIM for their own
+    domain while spoofing yours in the From header.
+  </p>
+  <table>
+    <thead><tr><th>Mode</th><th>SPF alignment rule</th><th>DKIM alignment rule</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Relaxed</strong> (<code>r</code>, default)</td>
+        <td>Envelope-from domain must be the same registered domain as header-from
+            (subdomains are allowed)</td>
+        <td>DKIM <code>d=</code> domain must share the same registered domain as header-from</td>
+      </tr>
+      <tr>
+        <td><strong>Strict</strong> (<code>s</code>)</td>
+        <td>Envelope-from domain must match header-from domain exactly</td>
+        <td>DKIM <code>d=</code> domain must match header-from domain exactly</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><em>Example:</em> with relaxed alignment, a message From <code>user@example.com</code> with
+  DKIM signed by <code>mail.example.com</code> still passes, because both share the registered
+  domain <code>example.com</code>. Under strict mode it would fail.</p>
+</article>
+
+<!-- Disposition -->
+<article id="disposition">
+  <header><strong>Disposition</strong></header>
+  <p>
+    The <em>disposition</em> reported in an aggregate report indicates what the receiving mail
+    server actually did with a message, independent of what the policy requests:
+  </p>
+  <table>
+    <thead><tr><th>Value</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>none</code></td><td>No action was taken (delivered normally)</td></tr>
+      <tr><td><code>quarantine</code></td><td>Message was placed in spam/junk</td></tr>
+      <tr><td><code>reject</code></td><td>Message was rejected at the SMTP level</td></tr>
+    </tbody>
+  </table>
+  <p>
+    When the domain's policy is <code>none</code>, receivers will almost always report
+    <code>none</code> regardless of whether authentication passed or failed. Use the
+    pass/fail columns to gauge your actual authentication health during the monitoring phase.
+  </p>
+</article>
+
+<!-- BIMI -->
+<article id="bimi">
+  <header><strong>BIMI — Brand Indicators for Message Identification</strong></header>
+  <p>
+    BIMI is an emerging standard that allows domain owners to display a verified brand logo
+    next to their emails in supporting mail clients (Gmail, Apple Mail, Yahoo Mail, etc.).
+    It requires a valid DMARC policy of <code>quarantine</code> or <code>reject</code>.
+  </p>
+  <p><strong>DNS record:</strong></p>
+  <pre><code>default._bimi.example.com  TXT  "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/cert.pem;"</code></pre>
+  <p><strong>Key tags:</strong></p>
+  <table>
+    <thead><tr><th>Tag</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>v</code></td><td>Version — always <code>BIMI1</code></td></tr>
+      <tr><td><code>l</code></td><td>URL of the SVG logo (must be a square SVG Tiny PS file)</td></tr>
+      <tr><td><code>a</code></td><td>URL of a Verified Mark Certificate (VMC) — required by most major providers to display the logo</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Without a VMC (issued by an accredited Certificate Authority), most mail clients will not
+    display the BIMI logo even if the record is present.
+  </p>
+</article>
+
+<!-- MTA-STS -->
+<article id="mta-sts">
+  <header><strong>MTA-STS — Mail Transfer Agent Strict Transport Security</strong></header>
+  <p>
+    MTA-STS is a mechanism that allows domains to declare that inbound SMTP connections must
+    use TLS and that the TLS certificate must be valid. It prevents downgrade attacks where
+    an attacker strips TLS from a mail connection.
+  </p>
+  <p><strong>How it works:</strong></p>
+  <ol>
+    <li>Publish a DNS record: <code>_mta-sts.example.com TXT "v=STSv1; id=20240101000000Z;"</code></li>
+    <li>Host a policy file at <code>https://mta-sts.example.com/.well-known/mta-sts.txt</code>
+        listing your MX hosts and the enforcement mode.</li>
+    <li>Sending servers that support MTA-STS will fetch and cache your policy and enforce TLS
+        when delivering mail to your domain.</li>
+  </ol>
+  <p><strong>Policy modes:</strong></p>
+  <table>
+    <thead><tr><th>Mode</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td><code>enforce</code></td><td>Sending server must deliver over valid TLS or fail the delivery</td></tr>
+      <tr><td><code>testing</code></td><td>Policy is observed but failures are only reported, not enforced</td></tr>
+      <tr><td><code>none</code></td><td>Policy is being withdrawn</td></tr>
+    </tbody>
+  </table>
+  <p>
+    The <code>id</code> tag in the DNS record acts as a cache-busting mechanism — change it
+    whenever you update the policy file to prompt sending servers to refresh their cached copy.
+  </p>
+</article>
+
+<!-- Reading the dashboard -->
+<article id="reading">
+  <header><strong>Reading This Dashboard</strong></header>
+  <p><strong>Pass vs Fail</strong></p>
+  <p>
+    A message row is counted as <em>passed</em> when it passes DMARC (i.e. SPF or DKIM passed
+    with correct alignment). It is counted as <em>failed</em> when neither check passed with
+    alignment. A high failure rate from a source you recognise usually means misconfigured
+    SPF/DKIM; from an unknown source it may indicate spoofing.
+  </p>
+  <p><strong>Pass rate</strong></p>
+  <p>
+    Shown as a percentage of messages from that source that passed DMARC. A legitimate sending
+    service should be at or near 100%. Values well below 100% warrant investigation.
+  </p>
+  <p><strong>Envelope From vs Header From</strong></p>
+  <p>
+    The <em>envelope from</em> (return-path) is used for SPF and for bounce delivery.
+    The <em>header from</em> is the address displayed to recipients. DMARC requires alignment
+    between these two. A mismatch highlighted in the report means the sending service is using
+    a different return-path domain, which is common with third-party senders (ESPs, CRMs).
+    Those senders need to either publish DKIM signed with your domain or be added to your SPF record.
+  </p>
+  <p><strong>Source IPs</strong></p>
+  <p>
+    Each row in an aggregate report represents one source IP sending mail that claims to be
+    from your domain. Unexpected IPs you do not recognise could indicate a misconfigured
+    service, a compromised account, or an active spoofing attempt.
+  </p>
+  <p><strong>Data Enrichment</strong></p>
+  <p>
+    Use the <a href="/enrich">Enrich</a> page to resolve reverse DNS, WHOIS organisation, and
+    country data for all source IPs, and to check DMARC, BIMI, and MTA-STS records for all
+    known domains. Enriched data is cached and used throughout the dashboard.
+  </p>
+</article>

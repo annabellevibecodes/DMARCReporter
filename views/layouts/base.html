@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{if .Title}}{{.Title}}{{else}}DMARC Reporter{{end}}</title>
+    {{if eq .Theme "pink"}}
+    <link rel="stylesheet" href="/static/css/fonts-pink.css">
+    <link rel="stylesheet" href="/static/css/theme-pink.css">
+    {{else if eq .Theme "blue"}}
+    <link rel="stylesheet" href="/static/css/fonts-blue.css">
+    <link rel="stylesheet" href="/static/css/theme-blue.css">
+    {{else if eq .Theme "goth"}}
+    <link rel="stylesheet" href="/static/css/fonts-goth.css">
+    <link rel="stylesheet" href="/static/css/theme-goth.css">
+    {{else}}
+    <link rel="stylesheet" href="/static/css/pico.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    {{end}}
+</head>
+<body>
+
+{{if eq .Theme "goth"}}
+<!-- ── Goth nav ── -->
+<div style="display:flex;align-items:center;padding:10px 24px;border-bottom:2px solid #c1121f;background:#0a0a0b;flex-shrink:0;">
+    <div style="display:flex;gap:8px;margin-right:18px;">
+        <span style="width:10px;height:10px;background:#c1121f;display:inline-block;"></span>
+        <span style="width:10px;height:10px;background:#3a3a3a;display:inline-block;"></span>
+        <span style="width:10px;height:10px;background:#3a3a3a;display:inline-block;"></span>
+    </div>
+    <span style="font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:.18em;color:#c1121f;font-size:16px;text-transform:uppercase;"><a href="/" style="color:#c1121f;text-decoration:none;">DMARC</a><span style="color:#d4d0c8;">::REPORTER</span></span>
+    <span style="margin-left:14px;font-size:11px;color:#6e6a60;letter-spacing:.04em;">~/mail.security &mdash; ssh never_again@reality</span>
+    <nav style="margin-left:auto;display:flex;align-items:center;gap:20px;">
+        <a href="/"        style="font-size:11px;color:{{if eq .ActivePage "dashboard"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">dashboard</a>
+        <a href="/reports" style="font-size:11px;color:{{if eq .ActivePage "reports"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">reports</a>
+        <a href="/domains" style="font-size:11px;color:{{if eq .ActivePage "domains"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">domains</a>
+        <a href="/sources" style="font-size:11px;color:{{if eq .ActivePage "sources"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">senders</a>
+        <a href="/help"    style="font-size:11px;color:{{if eq .ActivePage "help"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">help</a>
+        <a href="/upload"  style="font-size:11px;color:#c1121f;text-decoration:none;font-weight:{{if eq .ActivePage "upload"}}900{{else}}700{{end}};letter-spacing:.04em;">[upload]</a>
+        {{if .IMAPEnabled}}
+        <form method="POST" action="/fetch" style="margin:0">
+            <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+            <button type="submit" style="background:transparent;border:1px solid #1a1a1e;color:#6e6a60;font-family:inherit;font-size:11px;padding:3px 8px;cursor:pointer;letter-spacing:.04em;">[fetch]</button>
+        </form>
+        {{end}}
+        <a href="/enrich" style="font-size:11px;color:#c1121f;text-decoration:none;font-weight:700;letter-spacing:.04em;">[enrich]</a>
+        <div style="display:flex;border:1px solid #1a1a1e;">
+            <a href="/theme?t=pink" style="padding:3px 10px;font-size:10px;font-weight:700;letter-spacing:.12em;color:#6e6a60;text-decoration:none;border-right:1px solid #1a1a1e;">PINK</a>
+            <a href="/theme?t=blue" style="padding:3px 10px;font-size:10px;font-weight:700;letter-spacing:.12em;color:#6e6a60;text-decoration:none;border-right:1px solid #1a1a1e;">BLUE</a>
+            <a href="/theme?t=goth" style="padding:3px 10px;font-size:10px;font-weight:700;letter-spacing:.12em;background:#c1121f;color:#0a0a0b;text-decoration:none;">GOTH</a>
+        </div>
+    </nav>
+</div>
+<main style="max-width:1200px;margin:0 auto;padding:24px;">
+
+{{else if eq .Theme "pink"}}
+<!-- ── Pink nav ── -->
+<div style="position:relative;z-index:10;display:flex;align-items:center;padding:18px 32px;border-bottom:1px solid rgba(255,45,139,0.12);background:rgba(255,255,255,0.7);backdrop-filter:blur(10px);">
+    <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#ff2d8b 0%,#ff6fae 100%);display:grid;place-items:center;box-shadow:0 4px 12px rgba(255,45,139,0.35);">
+            <span style="color:#fff;font-family:'Playfair Display',serif;font-style:italic;font-weight:700;font-size:18px;line-height:1;">d</span>
+        </div>
+        <a href="/" style="font-family:'Playfair Display',serif;font-style:italic;font-weight:700;font-size:22px;color:#5a1837;letter-spacing:-0.01em;text-decoration:none;">dmarc<span style="color:#ff2d8b;">&middot;</span>darling</a>
+    </div>
+    <div style="margin-left:36px;display:flex;gap:24px;font-size:13px;color:#7a3055;font-weight:500;">
+        <a href="/"        style="color:{{if eq .ActivePage "dashboard"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "dashboard"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Dashboard</a>
+        <a href="/reports" style="color:{{if eq .ActivePage "reports"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "reports"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Reports</a>
+        <a href="/domains" style="color:{{if eq .ActivePage "domains"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "domains"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Domains</a>
+        <a href="/sources" style="color:{{if eq .ActivePage "sources"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "sources"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Senders</a>
+        <a href="/help"    style="color:{{if eq .ActivePage "help"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "help"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Help</a>
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+      {{if .IMAPEnabled}}
+        <form method="POST" action="/fetch" style="margin:0">
+          <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+          <button type="submit" style="background:#fff;border:1.5px solid #ffd1e3;border-radius:999px;padding:6px 16px;font-family:'Manrope',sans-serif;font-size:12px;font-weight:600;cursor:pointer;color:#7a3055;">Fetch</button>
+        </form>
+      {{end}}
+        <a href="/enrich" style="background:linear-gradient(180deg,#ff2d8b 0%,#e01872 100%);color:#fff;border:none;border-radius:999px;padding:8px 18px;font-family:'Manrope',sans-serif;font-weight:700;font-size:12px;text-decoration:none;box-shadow:0 6px 18px rgba(255,45,139,0.3);">Enrich</a>
+        <a href="/upload" style="background:linear-gradient(180deg,#ff2d8b 0%,#e01872 100%);color:#fff;border:none;border-radius:999px;padding:8px 18px;font-family:'Manrope',sans-serif;font-weight:700;font-size:12px;text-decoration:none;box-shadow:0 6px 18px rgba(255,45,139,0.3);">Upload &#8599;</a>
+        <div style="display:flex;gap:4px;">
+            <a href="/theme?t=pink" style="padding:5px 12px;border-radius:999px;background:#ff2d8b;border:1.5px solid #ff2d8b;font-size:11px;font-weight:600;color:#fff;text-decoration:none;">Pink</a>
+            <a href="/theme?t=blue" style="padding:5px 12px;border-radius:999px;border:1.5px solid #ffd1e3;font-size:11px;font-weight:600;color:#b8438a;text-decoration:none;">Blue</a>
+            <a href="/theme?t=goth" style="padding:5px 12px;border-radius:999px;border:1.5px solid #ffd1e3;font-size:11px;font-weight:600;color:#b8438a;text-decoration:none;">Goth</a>
+        </div>
+    </div>
+</div>
+<main style="max-width:1200px;margin:0 auto;padding:24px 32px;">
+
+{{else if eq .Theme "blue"}}
+<!-- ── Blue nav ── -->
+<div style="padding:16px 56px 0;background:#f6f1e7;">
+    <div style="display:flex;justify-content:space-between;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;color:#6b5e3c;letter-spacing:.08em;margin-bottom:8px;">
+        <a href="/" style="color:#0e2a4a;text-decoration:none;font-family:'Cormorant Garamond',serif;font-weight:600;font-style:normal;font-size:18px;">The DMARC Reporter</a>
+        <nav style="display:flex;gap:20px;align-items:center;">
+            <a href="/"        style="color:{{if eq .ActivePage "dashboard"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "dashboard"}}normal{{else}}italic{{end}};{{if eq .ActivePage "dashboard"}}font-weight:600;{{end}}">Dashboard</a>
+            <a href="/reports" style="color:{{if eq .ActivePage "reports"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "reports"}}normal{{else}}italic{{end}};{{if eq .ActivePage "reports"}}font-weight:600;{{end}}">Reports</a>
+            <a href="/domains" style="color:{{if eq .ActivePage "domains"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "domains"}}normal{{else}}italic{{end}};{{if eq .ActivePage "domains"}}font-weight:600;{{end}}">Domains</a>
+            <a href="/sources" style="color:{{if eq .ActivePage "sources"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "sources"}}normal{{else}}italic{{end}};{{if eq .ActivePage "sources"}}font-weight:600;{{end}}">Senders</a>
+            <a href="/help"    style="color:{{if eq .ActivePage "help"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "help"}}normal{{else}}italic{{end}};{{if eq .ActivePage "help"}}font-weight:600;{{end}}">Help</a>
+            <a href="/upload"  style="color:#0e2a4a;text-decoration:none;font-style:normal;font-weight:{{if eq .ActivePage "upload"}}700{{else}}600{{end}};">Upload &#8599;</a>
+            {{if .IMAPEnabled}}
+            <form method="POST" action="/fetch" style="margin:0">
+                <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+                <button type="submit" style="background:transparent;border:1px solid #0e2a4a;color:#0e2a4a;padding:3px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;cursor:pointer;">Fetch</button>
+            </form>
+            {{end}}
+            <a href="/enrich" style="color:#0e2a4a;text-decoration:none;font-style:normal;font-weight:600;">Enrich</a>
+            <div style="display:flex;border:1px solid #0e2a4a;">
+                <a href="/theme?t=pink" style="padding:3px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;color:#6b5e3c;text-decoration:none;border-right:1px solid #0e2a4a;">Pink</a>
+                <a href="/theme?t=blue" style="padding:3px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;background:#0e2a4a;color:#f6f1e7;text-decoration:none;border-right:1px solid #0e2a4a;">Blue</a>
+                <a href="/theme?t=goth" style="padding:3px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;color:#6b5e3c;text-decoration:none;">Goth</a>
+            </div>
+        </nav>
+        <span>An Aggregate Authentication Intelligencer</span>
+    </div>
+    <div style="height:3px;background:#0e2a4a;margin-bottom:4px;"></div>
+    <div style="height:1px;background:#0e2a4a;"></div>
+</div>
+<main style="max-width:1200px;margin:0 auto;padding:24px 56px;">
+
+{{else}}
+<!-- ── Default (PicoCSS) nav ── -->
+<header class="container-fluid">
+    <nav>
+        <ul>
+            <li><strong><a href="/">DMARC Reporter</a></strong></li>
+        </ul>
+        <ul>
+            <li><a href="/"        {{if eq .ActivePage "dashboard"}}aria-current="page"{{end}}>Dashboard</a></li>
+            <li><a href="/reports" {{if eq .ActivePage "reports"}}aria-current="page"{{end}}>Reports</a></li>
+            <li><a href="/domains" {{if eq .ActivePage "domains"}}aria-current="page"{{end}}>Domains</a></li>
+            <li><a href="/sources" {{if eq .ActivePage "sources"}}aria-current="page"{{end}}>Senders</a></li>
+            <li><a href="/help"    {{if eq .ActivePage "help"}}aria-current="page"{{end}}>Help</a></li>
+            <li><a href="/upload" role="button" class="outline secondary nav-upload" {{if eq .ActivePage "upload"}}aria-current="page"{{end}}>Upload</a></li>
+            {{if .IMAPEnabled}}
+            <li>
+                <form method="POST" action="/fetch" style="margin:0">
+                    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+                    <button type="submit" class="outline secondary" title="Fetch reports from IMAP">&#8635;</button>
+                </form>
+            </li>
+            {{end}}
+            <li>
+                <a href="/enrich" role="button" class="outline secondary nav-upload" title="Enrich all IPs and domains with DNS data">&#9741;</a>
+            </li>
+            <li class="theme-toggle">
+                <button class="outline secondary theme-btn" data-theme-btn="light" title="Light mode" aria-pressed="false">&#9728;</button>
+                <button class="outline secondary theme-btn" data-theme-btn="dark" title="Dark mode" aria-pressed="false">&#9790;</button>
+                <button class="outline secondary theme-btn" data-theme-btn="system" title="System default" aria-pressed="true">&#8857;</button>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="container">
+{{end}}
+
+    {{if .FlashMsg}}
+    <div class="flash flash-{{.FlashKind}}">{{.FlashMsg}}</div>
+    {{end}}
+    {{embed}}
+</main>
+<script src="/static/js/chart.umd.min.js"></script>
+<script src="/static/js/charts.js"></script>
+</body>
+</html>

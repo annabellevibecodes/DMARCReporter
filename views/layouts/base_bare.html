@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{if .Title}}{{.Title}}{{else}}DMARC Reporter{{end}}</title>
+    <style>* { box-sizing: border-box; } html, body { margin: 0; padding: 0; }</style>
+    {{if eq .Theme "pink"}}
+    <link rel="stylesheet" href="/static/css/fonts-pink.css">
+    <link rel="stylesheet" href="/static/css/theme-pink.css">
+    {{else if eq .Theme "blue"}}
+    <link rel="stylesheet" href="/static/css/fonts-blue.css">
+    <link rel="stylesheet" href="/static/css/theme-blue.css">
+    {{else}}
+    <link rel="stylesheet" href="/static/css/fonts-goth.css">
+    <link rel="stylesheet" href="/static/css/theme-goth.css">
+    {{end}}
+</head>
+<body>
+<script src="/static/js/chart.umd.min.js"></script>
+{{embed}}
+<script src="/static/js/charts.js"></script>
+</body>
+</html>

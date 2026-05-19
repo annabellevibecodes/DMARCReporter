@@ -1,0 +1,16 @@
+#!/bin/bash
+
+PORT=8080
+
+IMAP_HOST="some.host.com" \
+IMAP_PORT=993 \
+IMAP_USER="user" \
+IMAP_PASS="password" \
+IMAP_MAILBOX="INBOX" \
+IMAP_PROCESSED_MAILBOX="INBOX.Processed" \
+IMAP_TLS=true \
+DEBUG=false \
+UPLOAD_RATE_MAX=0 \
+FETCH_RATE_MAX=0 \
+./dmarcreporter
+
