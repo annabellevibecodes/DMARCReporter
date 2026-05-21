@@ -324,6 +324,31 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 		passRate = float64(totalPassed) / float64(totalMsgs) * 100
 	}
 
+	dkimSelectors, err := database.GetDKIMSelectorStats(a.DB, domain)
+	if err != nil {
+		return err
+	}
+
+	type selectorPayload struct {
+		Labels []string `json:"labels"`
+		Passed []int64  `json:"passed"`
+		Failed []int64  `json:"failed"`
+	}
+	sp := selectorPayload{}
+	for _, s := range dkimSelectors {
+		label := s.Selector
+		if s.SigningDomain != "" && s.SigningDomain != domain {
+			label = s.Selector + " (" + s.SigningDomain + ")"
+		}
+		sp.Labels = append(sp.Labels, label)
+		sp.Passed = append(sp.Passed, s.Passed)
+		sp.Failed = append(sp.Failed, s.Failed)
+	}
+	selectorBytes, err := json.Marshal(sp)
+	if err != nil {
+		return err
+	}
+
 	dmarcRec := lookupDMARCRecord(domain)
 	bimiRec := lookupBIMI(domain)
 	mtaStsRec := lookupMTASTS(domain)
@@ -342,6 +367,8 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 		"UniqueRecipients": len(uniqueRecipients),
 		"RecipientDomains": recipients,
 		"DomainTrendData":  template.JS(trendBytes),
+		"DKIMSelectors":    dkimSelectors,
+		"DKIMSelectorData": template.JS(selectorBytes),
 		"DMARCRecord":      dmarcRec,
 		"BIMIRecord":       bimiRec,
 		"MTASTSRecord":     mtaStsRec,

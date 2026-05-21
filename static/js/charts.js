@@ -196,3 +196,64 @@ function initPieChart(canvasId, dataScriptId, colors) {
     initPieChart('bimi-pie-chart',   'bimi-pie-data',   ['#198754', '#dee2e6']);
     initPieChart('mtasts-pie-chart', 'mtasts-pie-data', ['#0d6efd', '#dee2e6']);
 }());
+
+// initSelectorBarChart renders a stacked horizontal bar chart showing DKIM selector pass/fail.
+function initSelectorBarChart(canvasId, dataScriptId) {
+    const el = document.getElementById(dataScriptId);
+    if (!el) return;
+    var data;
+    try { data = JSON.parse(el.textContent); } catch (e) { return; }
+    if (!data || !data.labels || !data.labels.length) return;
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.labels,
+            datasets: [
+                {
+                    label: 'Passed',
+                    data: data.passed,
+                    backgroundColor: 'rgba(25, 135, 84, 0.8)',
+                    borderColor: '#198754',
+                    borderWidth: 1,
+                },
+                {
+                    label: 'Failed',
+                    data: data.failed,
+                    backgroundColor: 'rgba(220, 53, 69, 0.8)',
+                    borderColor: '#dc3545',
+                    borderWidth: 1,
+                },
+            ],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top' },
+                tooltip: {
+                    callbacks: {
+                        afterLabel: function(ctx) {
+                            var total = (ctx.chart.data.datasets[0].data[ctx.dataIndex] || 0)
+                                      + (ctx.chart.data.datasets[1].data[ctx.dataIndex] || 0);
+                            if (!total) return '';
+                            var pct = Math.round(ctx.parsed.x / total * 100);
+                            return pct + '% of ' + total + ' uses';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { stacked: true, beginAtZero: true, title: { display: true, text: 'Uses' } },
+                y: { stacked: true },
+            },
+        },
+    });
+}
+
+// Auto-initialise the DKIM selector bar chart on domain detail pages.
+(function () {
+    initSelectorBarChart('dkim-selector-chart', 'dkim-selector-data');
+}());

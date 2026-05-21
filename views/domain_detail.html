@@ -126,6 +126,47 @@
     <script type="application/json" id="domain-trend-data">{{.DomainTrendData}}</script>
 </article>
 
+{{if .DKIMSelectors}}
+<article>
+    <header>DKIM Selectors</header>
+    <p style="font-size:0.85rem;color:var(--pico-muted-color);margin-bottom:0.75rem;">
+        Each selector represents a signing key used to authenticate outbound mail.
+        Selectors seen in DMARC reports are listed below with their pass/fail counts.
+    </p>
+    <div style="max-height:280px;position:relative;">
+        <canvas id="dkim-selector-chart"></canvas>
+    </div>
+    <script type="application/json" id="dkim-selector-data">{{.DKIMSelectorData}}</script>
+    <table style="margin-top:1.25rem;">
+        <thead>
+            <tr>
+                <th>Selector</th>
+                <th>Signing Domain</th>
+                <th>Uses</th>
+                <th>Passed</th>
+                <th>Failed</th>
+                <th>Pass Rate</th>
+            </tr>
+        </thead>
+        <tbody>
+        {{range .DKIMSelectors}}
+            <tr>
+                <td><code>{{.Selector}}</code></td>
+                <td>{{.SigningDomain}}</td>
+                <td>{{.Total}}</td>
+                <td>{{.Passed}}</td>
+                <td>{{.Failed}}</td>
+                <td>
+                    <progress class="pass-bar" value="{{printf "%.0f" .PassRate}}" max="100"></progress>
+                    <span class="badge {{if ge .PassRate 95.0}}badge-pass{{else if ge .PassRate 80.0}}badge-warn{{else}}badge-fail{{end}}">{{printf "%.1f" .PassRate}}%</span>
+                </td>
+            </tr>
+        {{end}}
+        </tbody>
+    </table>
+</article>
+{{end}}
+
 {{if .RecipientDomains}}
 <h2>Top Recipient Domains</h2>
 <table>

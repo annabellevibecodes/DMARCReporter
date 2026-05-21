@@ -225,6 +225,24 @@ func GetDKIMResults(db *sqlx.DB, recordRowID int64) ([]models.DKIMResult, error)
 	return results, nil
 }
 
+// GetReportDKIMResults returns all DKIM results for every record row in a report,
+// keyed by record_row_id. Fetches in a single query to avoid N+1 lookups.
+func GetReportDKIMResults(db *sqlx.DB, reportID int64) (map[int64][]models.DKIMResult, error) {
+	var results []models.DKIMResult
+	if err := db.Select(&results, `
+		SELECT dk.*
+		FROM dkim_results dk
+		JOIN record_rows rr ON rr.id = dk.record_row_id
+		WHERE rr.report_id = ?`, reportID); err != nil {
+		return nil, err
+	}
+	m := make(map[int64][]models.DKIMResult)
+	for _, r := range results {
+		m[r.RecordRowID] = append(m[r.RecordRowID], r)
+	}
+	return m, nil
+}
+
 // GetSPFResults returns SPF results for a record row.
 func GetSPFResults(db *sqlx.DB, recordRowID int64) ([]models.SPFResult, error) {
 	var results []models.SPFResult

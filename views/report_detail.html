@@ -61,6 +61,7 @@
             <th>Disposition</th>
             <th>DKIM</th>
             <th>SPF</th>
+            <th>DKIM Selectors</th>
             <th>Envelope To</th>
             <th>Header From</th>
             <th>Envelope From</th>
@@ -74,6 +75,13 @@
             <td><span class="disposition-{{.Disposition}}">{{.Disposition}}</span></td>
             <td><span class="result-{{.EvalDKIM}}">{{.EvalDKIM}}</span></td>
             <td><span class="result-{{.EvalSPF}}">{{.EvalSPF}}</span></td>
+            <td style="font-size:0.82rem;">
+                {{range index $.DKIMByRecord .ID}}
+                <span title="domain: {{.Domain}} · result: {{.Result}}{{if .HumanResult}} · {{.HumanResult}}{{end}}">
+                    <code>{{.Selector}}</code>&nbsp;<span class="result-{{.Result}}">{{.Result}}</span>
+                </span>
+                {{end}}
+            </td>
             <td>{{.EnvelopeTo}}</td>
             <td>{{.HeaderFrom}}</td>
             <td>{{if and .EnvelopeFrom (ne .EnvelopeFrom "<>")}}{{.EnvelopeFrom}}{{end}}</td>

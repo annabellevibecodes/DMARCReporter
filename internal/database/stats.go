@@ -383,6 +383,39 @@ func GetDomainPolicyBreakdown(db *sqlx.DB, f StatsFilter) ([]PolicyBucket, error
 	return buckets, err
 }
 
+// DKIMSelectorStat holds aggregate stats for a DKIM selector observed in reports for a domain.
+type DKIMSelectorStat struct {
+	Selector      string  `db:"selector"`
+	SigningDomain string  `db:"signing_domain"`
+	Total         int64   `db:"total"`
+	Passed        int64   `db:"passed"`
+	Failed        int64   `db:"failed"`
+	PassRate      float64 `db:"pass_rate"`
+}
+
+// GetDKIMSelectorStats returns per-selector aggregate stats for all DKIM results tied to
+// record rows in reports for the given DMARC policy domain.
+func GetDKIMSelectorStats(db *sqlx.DB, domain string) ([]DKIMSelectorStat, error) {
+	var stats []DKIMSelectorStat
+	err := db.Select(&stats, `
+		SELECT
+			dk.selector,
+			dk.domain AS signing_domain,
+			COUNT(*) AS total,
+			SUM(CASE WHEN dk.result = 'pass' THEN 1 ELSE 0 END) AS passed,
+			SUM(CASE WHEN dk.result != 'pass' THEN 1 ELSE 0 END) AS failed,
+			ROUND(100.0 * SUM(CASE WHEN dk.result = 'pass' THEN 1 ELSE 0 END)
+				/ NULLIF(COUNT(*), 0), 1) AS pass_rate
+		FROM dkim_results dk
+		JOIN record_rows rr ON rr.id = dk.record_row_id
+		JOIN reports r ON r.id = rr.report_id
+		WHERE r.domain = ?
+		  AND dk.selector != ''
+		GROUP BY dk.selector, dk.domain
+		ORDER BY total DESC`, domain)
+	return stats, err
+}
+
 // GetDomainTrend returns weekly pass/fail counts for a specific domain over the last n days.
 func GetDomainTrend(db *sqlx.DB, domain string, days int) ([]TrendPoint, error) {
 	var points []TrendPoint

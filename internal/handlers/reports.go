@@ -141,15 +141,21 @@ func (a *App) HandleReportDetail(c *fiber.Ctx) error {
 		mismatches = append(mismatches, *m)
 	}
 
+	dkimByRecord, err := database.GetReportDKIMResults(a.DB, id)
+	if err != nil {
+		return err
+	}
+
 	return c.Render("report_detail", fiber.Map{
-		"Title":       "Report " + report.ReportID + " — DMARC Reporter",
-		"Theme":       getTheme(c),
-		"ActivePage":  "reports",
-		"Report":      report,
-		"Records":     records,
-		"HasXML":      xmlData != "",
-		"Mismatches":  mismatches,
-		"IMAPEnabled": a.Cfg.IMAPHost != "",
-		"CSRFToken":   c.Locals("csrf"),
+		"Title":        "Report " + report.ReportID + " — DMARC Reporter",
+		"Theme":        getTheme(c),
+		"ActivePage":   "reports",
+		"Report":       report,
+		"Records":      records,
+		"HasXML":       xmlData != "",
+		"Mismatches":   mismatches,
+		"DKIMByRecord": dkimByRecord,
+		"IMAPEnabled":  a.Cfg.IMAPHost != "",
+		"CSRFToken":    c.Locals("csrf"),
 	}, "layouts/base")
 }

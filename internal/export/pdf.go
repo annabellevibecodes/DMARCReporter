@@ -37,7 +37,7 @@ func WritePDF(w io.Writer, rd *ReportData) error {
 		pdf.SetY(-12)
 		pdf.SetFont("Helvetica", "", 8)
 		pdf.SetTextColor(colorMutedR, colorMutedG, colorMutedB)
-		pdf.CellFormat(pdfBodyW/2, 5, "DMARC Reporter — Confidential", "", 0, "L", false, 0, "")
+		pdf.CellFormat(pdfBodyW/2, 5, "DMARC Reporter - Confidential", "", 0, "L", false, 0, "")
 		pdf.CellFormat(pdfBodyW/2, 5, fmt.Sprintf("Page %d", pdf.PageNo()), "", 0, "R", false, 0, "")
 	})
 
@@ -113,7 +113,7 @@ func WritePDF(w io.Writer, rd *ReportData) error {
 		rows := make([][]string, len(rd.Records))
 		for i, r := range rd.Records {
 			period := time.Unix(r.DateRangeBegin, 0).UTC().Format("2006-01-02") +
-				" – " + time.Unix(r.DateRangeEnd, 0).UTC().Format("2006-01-02")
+				" - " + time.Unix(r.DateRangeEnd, 0).UTC().Format("2006-01-02")
 			rows[i] = []string{
 				r.SourceIP,
 				fmt.Sprintf("%d", r.Count),
