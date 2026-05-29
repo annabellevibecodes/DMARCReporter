@@ -117,7 +117,7 @@
         </div>
         <div id="goth-sparkline" style="font-size:20px;color:#c1121f;letter-spacing:.04em;margin-bottom:8px;white-space:pre;"></div>
         <div style="background:#0f0f11;border:1px solid #1a1a1e;padding:8px;">
-          <div style="position:relative;height:180px;width:100%;"><canvas id="trend-chart"></canvas></div>
+          <div style="position:relative;height:180px;width:100%;"><canvas id="trend-chart" data-theme="goth"></canvas></div>
         </div>
         <script type="application/json" id="trend-data">{{.TrendData}}</script>
       </div>
@@ -316,21 +316,3 @@
   </div>
 </div>
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-  var raw = document.getElementById('trend-data');
-  if (!raw) return;
-  var data;
-  try { data = JSON.parse(raw.textContent); } catch(e) { return; }
-
-  // ASCII sparkline
-  var chars = '▁▂▃▄▅▆▇█';
-  var allVals = (data.passed || []).map(function(p,i){ return p + (data.failed[i]||0); });
-  var maxVal = Math.max.apply(null, allVals) || 1;
-  var spark = allVals.map(function(v){ return chars[Math.min(7, Math.floor(v/maxVal*7.999))]; }).join('');
-  var el = document.getElementById('goth-sparkline');
-  if (el) el.textContent = spark;
-
-  initThemedTrendChart('trend-chart', data, 'goth');
-});
-</script>

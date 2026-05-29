@@ -119,7 +119,9 @@ function initThemedTrendChart(canvasId, data, theme) {
     });
 }
 
-// Auto-initialise the global compliance trend chart (skip if a themed chart already rendered it).
+// Auto-initialise the global compliance trend chart.
+// On themed dashboards the canvas carries a data-theme attribute; use the
+// themed renderer in that case, otherwise fall back to the plain renderer.
 (function () {
     const canvas = document.getElementById('trend-chart');
     if (!canvas || Chart.getChart(canvas)) return;
@@ -127,7 +129,20 @@ function initThemedTrendChart(canvasId, data, theme) {
     if (!el) return;
     try {
         const data = JSON.parse(el.textContent);
-        if (data && data.labels && data.labels.length > 0) {
+        if (!data || !data.labels) return;
+        const theme = canvas.getAttribute('data-theme');
+        if (theme) {
+            // Goth theme: also render ASCII sparkline if present.
+            if (theme === 'goth') {
+                var chars = '▁▂▃▄▅▆▇█';
+                var allVals = (data.passed || []).map(function(p,i){ return p + (data.failed[i]||0); });
+                var maxVal = Math.max.apply(null, allVals) || 1;
+                var spark = allVals.map(function(v){ return chars[Math.min(7, Math.floor(v/maxVal*7.999))]; }).join('');
+                var sparkEl = document.getElementById('goth-sparkline');
+                if (sparkEl) sparkEl.textContent = spark;
+            }
+            initThemedTrendChart('trend-chart', data, theme);
+        } else if (data.labels.length > 0) {
             initTrendChart('trend-chart', data);
         }
     } catch (e) {}
