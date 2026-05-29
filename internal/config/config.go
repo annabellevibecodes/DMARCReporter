@@ -9,9 +9,11 @@ type Config struct {
 	DBPath               string
 	Port                 string
 	SecureCookies        bool // set true when serving over HTTPS
+	HSTSEnabled          bool // set true to emit Strict-Transport-Security (implies HTTPS)
 	Debug                bool // set true to emit verbose debug logs to stdout + syslog
 	AuthUser             string
 	AuthPassword         string
+	AuthDisabled         bool // set true (AUTH_DISABLED=true) to run without authentication — dev only
 	UploadRateMax        int // max uploads per minute per IP (0 = disabled)
 	FetchRateMax         int // max IMAP fetches per 5 minutes per IP (0 = disabled)
 	IMAPHost             string
@@ -28,9 +30,11 @@ func Load() Config {
 		DBPath:               getenv("DB_PATH", "dmarc.db"),
 		Port:                 getenv("PORT", "8080"),
 		SecureCookies:        os.Getenv("SECURE_COOKIES") == "true",
+		HSTSEnabled:          os.Getenv("HSTS_ENABLED") == "true",
 		Debug:                os.Getenv("DEBUG") == "true",
 		AuthUser:             getenv("AUTH_USER", "admin"),
 		AuthPassword:         os.Getenv("AUTH_PASSWORD"),
+		AuthDisabled:         os.Getenv("AUTH_DISABLED") == "true",
 		UploadRateMax:        getenvInt("UPLOAD_RATE_MAX", 20),
 		FetchRateMax:         getenvInt("FETCH_RATE_MAX", 3),
 		IMAPHost:             os.Getenv("IMAP_HOST"),

@@ -44,6 +44,20 @@ var dmarcTagLabels = map[string]string{
 	"ri":    "Report Interval",
 }
 
+// sanitiseReportURIList filters a comma-separated list of DMARC report URIs,
+// keeping only those with an allowed scheme (mailto: or https://).
+func sanitiseReportURIList(val string) string {
+	parts := strings.Split(val, ",")
+	var safe []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if strings.HasPrefix(p, "mailto:") || strings.HasPrefix(p, "https://") {
+			safe = append(safe, p)
+		}
+	}
+	return strings.Join(safe, ",")
+}
+
 func lookupDMARCRecord(domain string) DMARCRecord {
 	txts, err := net.LookupTXT("_dmarc." + domain)
 	if err != nil {
@@ -73,6 +87,10 @@ func lookupDMARCRecord(domain string) DMARCRecord {
 		}
 		key := strings.ToLower(strings.TrimSpace(part[:idx]))
 		val := strings.TrimSpace(part[idx+1:])
+		// Sanitise report URIs (rua/ruf) to permitted schemes only.
+		if key == "rua" || key == "ruf" {
+			val = sanitiseReportURIList(val)
+		}
 		label := dmarcTagLabels[key]
 		if label == "" {
 			label = key
@@ -196,7 +214,9 @@ func lookupBIMI(domain string) BIMIRecord {
 		val := strings.TrimSpace(part[idx+1:])
 		switch key {
 		case "l":
-			rec.LogoURL = val
+			if strings.HasPrefix(val, "https://") {
+				rec.LogoURL = val
+			}
 		case "a":
 			rec.VMCCert = val
 		}
@@ -247,22 +267,36 @@ const domainsPageSize = 50
 
 func (a *App) HandleDomainsList(c *fiber.Ctx) error {
 	page, _ := strconv.Atoi(c.Query("page", "1"))
-	domains, total, err := database.ListDomainsPaged(a.DB, page, domainsPageSize)
+	period := c.Query("period", "1y")
+	from, _, periodLabel := parsePeriod(period)
+
+	sortBy := c.Query("sort", "pass_rate")
+	sortDir := c.Query("dir", "asc")
+	if sortDir != "asc" && sortDir != "desc" {
+		sortDir = "asc"
+	}
+
+	domains, total, err := database.ListDomainsPaged(a.DB, page, domainsPageSize, from, sortBy, sortDir)
 	if err != nil {
 		return err
 	}
 	totalPages := (total + domainsPageSize - 1) / domainsPageSize
 	return c.Render("domains", fiber.Map{
-		"Title":       "Domains — DMARC Reporter",
-		"Theme":       getTheme(c),
-		"ActivePage":  "domains",
-		"Domains":     domains,
-		"Page":        page,
-		"TotalPages":  totalPages,
-		"Total":       total,
-		"PageNums":    pageWindow(page, totalPages),
-		"IMAPEnabled": a.Cfg.IMAPHost != "",
-		"CSRFToken":   c.Locals("csrf"),
+		"Title":         "Domains — DMARC Reporter",
+		"Theme":         getTheme(c),
+		"ActivePage":    "domains",
+		"Domains":       domains,
+		"Page":          page,
+		"TotalPages":    totalPages,
+		"Total":         total,
+		"PageNums":      pageWindow(page, totalPages),
+		"PeriodOptions": periodOptions,
+		"SelectedPeriod": period,
+		"PeriodLabel":   periodLabel,
+		"SortBy":        sortBy,
+		"SortDir":       sortDir,
+		"IMAPEnabled":   a.Cfg.IMAPHost != "",
+		"CSRFToken":     c.Locals("csrf"),
 	}, "layouts/base")
 }
 
@@ -272,12 +306,20 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 		return fiber.ErrBadRequest
 	}
 
-	records, err := database.GetDomainRecords(a.DB, domain, 100)
+	period := c.Query("period", "1y")
+	from, _, periodLabel := parsePeriod(period)
+
+	records, err := database.GetDomainRecords(a.DB, domain, from, 100)
 	if err != nil {
 		return err
 	}
 
-	trend, err := database.GetDomainTrend(a.DB, domain, 90)
+	agg, err := database.GetDomainAggStats(a.DB, domain, from)
+	if err != nil {
+		return err
+	}
+
+	trend, err := database.GetDomainTrend(a.DB, domain, from)
 	if err != nil {
 		return err
 	}
@@ -303,25 +345,9 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 		return err
 	}
 
-	// Compute summary from records
-	var totalMsgs, totalPassed, totalFailed int
-	uniqueIPs := map[string]struct{}{}
-	uniqueRecipients := map[string]struct{}{}
-	for _, r := range records {
-		totalMsgs += r.Count
-		if r.EvalDKIM == "pass" || r.EvalSPF == "pass" {
-			totalPassed += r.Count
-		} else {
-			totalFailed += r.Count
-		}
-		uniqueIPs[r.SourceIP] = struct{}{}
-		if r.EnvelopeTo != "" && r.EnvelopeTo != "<>" {
-			uniqueRecipients[r.EnvelopeTo] = struct{}{}
-		}
-	}
-	var passRate float64
-	if totalMsgs > 0 {
-		passRate = float64(totalPassed) / float64(totalMsgs) * 100
+	efBreakdown, err := database.GetEnvelopeFromBreakdown(a.DB, domain, from)
+	if err != nil {
+		return err
 	}
 
 	dkimSelectors, err := database.GetDKIMSelectorStats(a.DB, domain)
@@ -354,25 +380,29 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 	mtaStsRec := lookupMTASTS(domain)
 
 	return c.Render("domain_detail", fiber.Map{
-		"Title":            domain + " — DMARC Reporter",
-		"Theme":            getTheme(c),
-		"ActivePage":       "domains",
-		"Domain":           domain,
-		"Records":          records,
-		"TotalMessages":    totalMsgs,
-		"TotalPassed":      totalPassed,
-		"TotalFailed":      totalFailed,
-		"PassRate":         passRate,
-		"UniqueSenders":    len(uniqueIPs),
-		"UniqueRecipients": len(uniqueRecipients),
-		"RecipientDomains": recipients,
-		"DomainTrendData":  template.JS(trendBytes),
-		"DKIMSelectors":    dkimSelectors,
-		"DKIMSelectorData": template.JS(selectorBytes),
-		"DMARCRecord":      dmarcRec,
-		"BIMIRecord":       bimiRec,
-		"MTASTSRecord":     mtaStsRec,
-		"IMAPEnabled":      a.Cfg.IMAPHost != "",
-		"CSRFToken":        c.Locals("csrf"),
+		"Title":               domain + " — DMARC Reporter",
+		"Theme":               getTheme(c),
+		"ActivePage":          "domains",
+		"Domain":              domain,
+		"Records":             records,
+		"TotalMessages":       agg.TotalMessages,
+		"TotalPassed":         agg.Passed,
+		"TotalFailed":         agg.Failed,
+		"PassRate":            agg.PassRate,
+		"UniqueSenders":       agg.UniqueSenders,
+		"UniqueRecipients":    agg.UniqueRecipients,
+		"RecipientDomains":    recipients,
+		"EnvelopeFromBreakdown": efBreakdown,
+		"DomainTrendData":     template.JS(trendBytes),
+		"DKIMSelectors":       dkimSelectors,
+		"DKIMSelectorData":    template.JS(selectorBytes),
+		"DMARCRecord":         dmarcRec,
+		"BIMIRecord":          bimiRec,
+		"MTASTSRecord":        mtaStsRec,
+		"PeriodOptions":       periodOptions,
+		"SelectedPeriod":      period,
+		"PeriodLabel":         periodLabel,
+		"IMAPEnabled":         a.Cfg.IMAPHost != "",
+		"CSRFToken":           c.Locals("csrf"),
 	}, "layouts/base")
 }

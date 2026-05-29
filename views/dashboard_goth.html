@@ -40,16 +40,24 @@
     {{if .FlashMsg}}
     <div style="padding:8px 14px;margin-bottom:12px;border-left:3px solid {{if eq .FlashKind "success"}}#5a8a5a{{else if eq .FlashKind "error"}}#c1121f{{else}}#b89a3e{{end}};font-size:12px;background:rgba(255,255,255,0.03);">{{.FlashMsg}}</div>
     {{end}}
+    {{if .SelectedEF}}
+    <div style="padding:8px 14px;margin-bottom:10px;border-left:3px solid #b89a3e;font-size:12px;background:rgba(255,255,255,0.03);display:flex;align-items:center;gap:10px;">
+      <span style="color:#b89a3e;">// scope:</span>
+      <span style="color:#d4d0c8;">outbound mail from <strong>{{.SelectedEF}}</strong> only — third-party senders and spoofed mail excluded</span>
+      <span style="color:#6e6a60;">&middot;</span>
+      <a href="/domains/{{.SelectedEF}}" style="color:#c1121f;text-decoration:none;">view full DMARC coverage &rarr;</a>
+    </div>
+    {{end}}
     <form method="GET" action="/" style="margin-bottom:10px;display:flex;align-items:center;gap:12px;font-size:11px;flex-wrap:wrap;">
       <span style="color:#c1121f;">$</span>
       <span style="color:#6e6a60;letter-spacing:.04em;">period</span>
-      <select name="period" onchange="this.form.submit()" style="background:#0f0f11;border:1px solid #3a3a3a;color:#d4d0c8;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:3px 8px;cursor:pointer;outline:none;">
+      <select name="period" data-autosubmit style="background:#0f0f11;border:1px solid #3a3a3a;color:#d4d0c8;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:3px 8px;cursor:pointer;outline:none;">
         {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
       </select>
       {{if .EFDomains}}
-      <span style="color:#6e6a60;letter-spacing:.04em;">envelope_from</span>
-      <select name="ef" onchange="this.form.submit()" style="background:#0f0f11;border:1px solid #3a3a3a;color:#d4d0c8;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:3px 8px;cursor:pointer;outline:none;">
-        <option value="">-- all --</option>
+      <span style="color:#6e6a60;letter-spacing:.04em;" title="Filters to mail where this domain was the actual SMTP MAIL FROM sender. Excludes third-party senders and spoofed mail.">outbound domain (MAIL FROM)</span>
+      <select name="ef" data-autosubmit style="background:#0f0f11;border:1px solid #3a3a3a;color:#d4d0c8;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:3px 8px;cursor:pointer;outline:none;">
+        <option value="">-- all senders --</option>
         {{range .EFDomains}}<option value="{{.}}"{{if eq . $.SelectedEF}} selected{{end}}>{{.}}</option>{{end}}
       </select>
       {{end}}

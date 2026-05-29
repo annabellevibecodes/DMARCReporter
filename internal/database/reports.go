@@ -23,6 +23,8 @@ type ReportFilter struct {
 	DateTo   time.Time
 	Page     int
 	PageSize int
+	SortBy   string // "domain","org","date_begin","date_end","policy"
+	SortDir  string // "asc" or "desc"
 }
 
 // SaveReport stores a parsed DMARC report, all its records, and the raw XML in a transaction.
@@ -161,13 +163,30 @@ func ListReports(db *sqlx.DB, f ReportFilter) ([]models.Report, int, error) {
 	}
 
 	offset := (f.Page - 1) * f.PageSize
+	dir := "DESC"
+	if f.SortDir == "asc" {
+		dir = "ASC"
+	}
+	var orderCol string
+	switch f.SortBy {
+	case "domain":
+		orderCol = "domain"
+	case "org":
+		orderCol = "org_name"
+	case "date_end":
+		orderCol = "date_range_end"
+	case "policy":
+		orderCol = "policy"
+	default:
+		orderCol = "date_range_begin"
+	}
 	query := `
 		SELECT *,
 			COALESCE((SELECT GROUP_CONCAT(DISTINCT envelope_to)
 			          FROM record_rows
 			          WHERE report_id = reports.id
 			            AND envelope_to != '' AND envelope_to != '<>'), '') AS envelope_to_domains
-		FROM reports` + where + ` ORDER BY date_range_begin DESC LIMIT ? OFFSET ?`
+		FROM reports` + where + ` ORDER BY ` + orderCol + ` ` + dir + ` LIMIT ? OFFSET ?`
 	dataArgs := append(append([]any{}, args...), f.PageSize, offset)
 
 	var reports []models.Report
@@ -275,18 +294,44 @@ func ListDomains(db *sqlx.DB) ([]DomainStat, error) {
 }
 
 // ListDomainsPaged returns one page of domains (same ordering as ListDomains)
-// and the total number of distinct domains.
-func ListDomainsPaged(db *sqlx.DB, page, pageSize int) ([]DomainStat, int, error) {
+// and the total number of distinct domains. If from > 0, only data from reports
+// whose date_range_begin >= from is included.
+func ListDomainsPaged(db *sqlx.DB, page, pageSize int, from int64, sortBy, sortDir string) ([]DomainStat, int, error) {
 	if page < 1 {
 		page = 1
 	}
 	var total int
-	if err := db.Get(&total, `SELECT COUNT(DISTINCT domain) FROM reports`); err != nil {
-		return nil, 0, err
+	if from > 0 {
+		if err := db.Get(&total, `SELECT COUNT(DISTINCT domain) FROM reports WHERE date_range_begin >= ?`, from); err != nil {
+			return nil, 0, err
+		}
+	} else {
+		if err := db.Get(&total, `SELECT COUNT(DISTINCT domain) FROM reports`); err != nil {
+			return nil, 0, err
+		}
 	}
+	dir := "ASC"
+	if sortDir == "desc" {
+		dir = "DESC"
+	}
+	var orderCol string
+	switch sortBy {
+	case "domain":
+		orderCol = "r.domain"
+	case "reports":
+		orderCol = "report_count"
+	case "messages":
+		orderCol = "total_messages"
+	case "passed":
+		orderCol = "passed"
+	case "failed":
+		orderCol = "failed"
+	default:
+		orderCol = "pass_rate"
+	}
+
 	offset := (page - 1) * pageSize
-	var stats []DomainStat
-	err := db.Select(&stats, `
+	const selectCols = `
 		SELECT
 			r.domain,
 			COUNT(DISTINCT r.id) AS report_count,
@@ -296,82 +341,126 @@ func ListDomainsPaged(db *sqlx.DB, page, pageSize int) ([]DomainStat, int, error
 			ROUND(100.0 * SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END)
 				/ NULLIF(SUM(rr.count), 0), 1) AS pass_rate
 		FROM reports r
-		JOIN record_rows rr ON rr.report_id = r.id
-		GROUP BY r.domain
-		ORDER BY pass_rate ASC
-		LIMIT ? OFFSET ?`, pageSize, offset)
+		JOIN record_rows rr ON rr.report_id = r.id`
+	orderLimit := fmt.Sprintf(" GROUP BY r.domain ORDER BY %s %s LIMIT ? OFFSET ?", orderCol, dir)
+
+	var stats []DomainStat
+	var err error
+	if from > 0 {
+		err = db.Select(&stats, selectCols+` WHERE r.date_range_begin >= ?`+orderLimit, from, pageSize, offset)
+	} else {
+		err = db.Select(&stats, selectCols+orderLimit, pageSize, offset)
+	}
 	return stats, total, err
 }
 
 // GetDomainRecords returns recent record rows for a specific domain.
-func GetDomainRecords(db *sqlx.DB, domain string, limit int) ([]DomainRecord, error) {
+// If from > 0, only rows from reports whose date_range_begin >= from are returned.
+func GetDomainRecords(db *sqlx.DB, domain string, from int64, limit int) ([]DomainRecord, error) {
 	var rows []DomainRecord
-	err := db.Select(&rows, `
-		SELECT rr.*, r.org_name, r.date_range_begin, r.date_range_end
-		FROM record_rows rr
-		JOIN reports r ON r.id = rr.report_id
-		WHERE r.domain = ?
-		ORDER BY r.date_range_begin DESC, rr.count DESC
-		LIMIT ?`, domain, limit)
+	var err error
+	if from > 0 {
+		err = db.Select(&rows, `
+			SELECT rr.*, r.org_name, r.date_range_begin, r.date_range_end
+			FROM record_rows rr
+			JOIN reports r ON r.id = rr.report_id
+			WHERE r.domain = ? AND r.date_range_begin >= ?
+			ORDER BY r.date_range_begin DESC, rr.count DESC
+			LIMIT ?`, domain, from, limit)
+	} else {
+		err = db.Select(&rows, `
+			SELECT rr.*, r.org_name, r.date_range_begin, r.date_range_end
+			FROM record_rows rr
+			JOIN reports r ON r.id = rr.report_id
+			WHERE r.domain = ?
+			ORDER BY r.date_range_begin DESC, rr.count DESC
+			LIMIT ?`, domain, limit)
+	}
 	return rows, err
 }
 
-// ListSources returns source IPs ordered by failure rate (worst first), paginated.
-// Only IPs with at least 5 messages are included to filter out noise (threshold
-// drops to 1 when any filter is active). When disposition is set the results are
-// ordered by message volume instead. country="??" matches IPs with no geo data.
+// ListSources returns source IPs, paginated. minMessages sets the HAVING threshold
+// (minimum total message count); values < 1 are treated as 1 (show all IPs).
+// sortBy accepts: "ip", "messages", "passed", "failed" (default: fail rate).
+// sortDir accepts: "asc" or "desc". country="??" matches IPs with no geo data.
+// If from > 0, only data from reports whose date_range_begin >= from is included.
 // Returns the page of results and the total matching row count.
-func ListSources(db *sqlx.DB, page, pageSize int, envelopeFrom, disposition, country, sourceIP string) ([]SourceStat, int, error) {
+func ListSources(db *sqlx.DB, page, pageSize int, envelopeFrom, disposition, country, sourceIP string, from int64, minMessages int, sortBy, sortDir string) ([]SourceStat, int, error) {
 	if page < 1 {
 		page = 1
 	}
 
-	var rrClauses []string
+	var clauses []string
 	var args []any
+
+	// When a date range is requested we must join reports; we always add it
+	// so the join is only present when needed.
+	reportsJoin := ""
+	if from > 0 {
+		reportsJoin = " JOIN reports r ON r.id = rr.report_id"
+		clauses = append(clauses, "r.date_range_begin >= ?")
+		args = append(args, from)
+	}
+
 	if envelopeFrom != "" {
-		rrClauses = append(rrClauses, "rr.envelope_from = ?")
+		clauses = append(clauses, "rr.envelope_from = ?")
 		args = append(args, envelopeFrom)
 	}
 	if disposition != "" {
-		rrClauses = append(rrClauses, "rr.disposition = ?")
+		clauses = append(clauses, "rr.disposition = ?")
 		args = append(args, disposition)
 	}
 	if sourceIP != "" {
-		rrClauses = append(rrClauses, "rr.source_ip = ?")
+		clauses = append(clauses, "rr.source_ip = ?")
 		args = append(args, sourceIP)
 	}
 
 	// Country filter requires a LEFT JOIN on ip_info.
-	joinClause := ""
+	ipJoin := ""
 	if country != "" {
-		joinClause = " LEFT JOIN ip_info ii ON ii.ip = rr.source_ip"
+		ipJoin = " LEFT JOIN ip_info ii ON ii.ip = rr.source_ip"
 		if country == "??" {
-			rrClauses = append(rrClauses, "(ii.whois_country IS NULL OR ii.whois_country = '')")
+			clauses = append(clauses, "(ii.whois_country IS NULL OR ii.whois_country = '')")
 		} else {
-			rrClauses = append(rrClauses, "ii.whois_country = ?")
+			clauses = append(clauses, "ii.whois_country = ?")
 			args = append(args, country)
 		}
 	}
 
 	where := ""
-	if len(rrClauses) > 0 {
-		where = " WHERE " + strings.Join(rrClauses, " AND ")
+	if len(clauses) > 0 {
+		where = " WHERE " + strings.Join(clauses, " AND ")
 	}
 
-	anyFilter := envelopeFrom != "" || disposition != "" || country != "" || sourceIP != ""
-	having := "HAVING SUM(rr.count) >= 5"
-	if anyFilter {
-		having = "HAVING SUM(rr.count) >= 1"
+	min := 1
+	if minMessages > 1 {
+		min = minMessages
+	}
+	having := "HAVING SUM(rr.count) >= ?"
+
+	dir := "DESC"
+	if sortDir == "asc" {
+		dir = "ASC"
+	}
+	var orderBy string
+	switch sortBy {
+	case "ip":
+		orderBy = "ORDER BY rr.source_ip " + dir
+	case "messages":
+		orderBy = "ORDER BY SUM(rr.count) " + dir
+	case "passed":
+		orderBy = "ORDER BY SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END) " + dir
+	case "failed":
+		orderBy = "ORDER BY SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END) " + dir
+	default:
+		orderBy = "ORDER BY CAST(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END) AS REAL) / SUM(rr.count) " + dir
 	}
 
-	orderBy := "ORDER BY CAST(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END) AS REAL) / SUM(rr.count) DESC"
-	if disposition != "" {
-		orderBy = "ORDER BY SUM(rr.count) DESC"
-	}
+	joinClause := reportsJoin + ipJoin
 
 	// Total count (wrap in subquery to apply HAVING before counting).
 	var total int
-	countArgs := append([]any{}, args...)
+	countArgs := append(append([]any{}, args...), min)
 	if err := db.Get(&total, `
 		SELECT COUNT(*) FROM (
 			SELECT rr.source_ip
@@ -383,7 +472,7 @@ func ListSources(db *sqlx.DB, page, pageSize int, envelopeFrom, disposition, cou
 	}
 
 	offset := (page - 1) * pageSize
-	dataArgs := append(args, pageSize, offset)
+	dataArgs := append(append([]any{}, args...), min, pageSize, offset)
 	var stats []SourceStat
 	err := db.Select(&stats, `
 		SELECT
@@ -425,15 +514,27 @@ func GetRecipientRecords(db *sqlx.DB, envelopeTo string, limit int) ([]DomainRec
 }
 
 // GetSourceRecords returns record rows for a specific source IP.
-func GetSourceRecords(db *sqlx.DB, ip string, limit int) ([]DomainRecord, error) {
+// If from > 0, only rows from reports whose date_range_begin >= from are returned.
+func GetSourceRecords(db *sqlx.DB, ip string, from int64, limit int) ([]DomainRecord, error) {
 	var rows []DomainRecord
-	err := db.Select(&rows, `
-		SELECT rr.*, r.org_name, r.date_range_begin, r.date_range_end
-		FROM record_rows rr
-		JOIN reports r ON r.id = rr.report_id
-		WHERE rr.source_ip = ?
-		ORDER BY r.date_range_begin DESC, rr.count DESC
-		LIMIT ?`, ip, limit)
+	var err error
+	if from > 0 {
+		err = db.Select(&rows, `
+			SELECT rr.*, r.org_name, r.date_range_begin, r.date_range_end
+			FROM record_rows rr
+			JOIN reports r ON r.id = rr.report_id
+			WHERE rr.source_ip = ? AND r.date_range_begin >= ?
+			ORDER BY r.date_range_begin DESC, rr.count DESC
+			LIMIT ?`, ip, from, limit)
+	} else {
+		err = db.Select(&rows, `
+			SELECT rr.*, r.org_name, r.date_range_begin, r.date_range_end
+			FROM record_rows rr
+			JOIN reports r ON r.id = rr.report_id
+			WHERE rr.source_ip = ?
+			ORDER BY r.date_range_begin DESC, rr.count DESC
+			LIMIT ?`, ip, limit)
+	}
 	return rows, err
 }
 

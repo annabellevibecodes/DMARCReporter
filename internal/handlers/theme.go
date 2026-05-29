@@ -1,6 +1,10 @@
 package handlers
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"net/url"
+
+	"github.com/gofiber/fiber/v2"
+)
 
 var validThemes = map[string]bool{"pink": true, "blue": true, "goth": true}
 
@@ -28,5 +32,8 @@ func (a *App) HandleSetTheme(c *fiber.Ctx) error {
 		SameSite: "Lax",
 	})
 	ref := c.Get("Referer", "/")
+	if u, err := url.Parse(ref); err != nil || u.Host != "" {
+		ref = "/"
+	}
 	return c.Redirect(ref, fiber.StatusSeeOther)
 }

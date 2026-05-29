@@ -25,6 +25,11 @@ var periodOptions = []PeriodOption{
 	{"3m", "3 Months"},
 	{"lm", "Last Month"},
 	{"30d", "Last 30 Days"},
+	{"14d", "Last 14 Days"},
+	{"7d", "Last 7 Days"},
+	{"3d", "Last 3 Days"},
+	{"2d", "Last 2 Days"},
+	{"24h", "Last 24 Hours"},
 }
 
 // parsePeriod converts a period string into from/to Unix timestamps and a display label.
@@ -47,6 +52,16 @@ func parsePeriod(p string) (from, to int64, label string) {
 		return firstOfLastMonth.Unix(), firstOfThisMonth.Unix() - 1, "Last Month"
 	case "30d":
 		return now.AddDate(0, 0, -30).Unix(), 0, "Last 30 Days"
+	case "14d":
+		return now.AddDate(0, 0, -14).Unix(), 0, "Last 14 Days"
+	case "7d":
+		return now.AddDate(0, 0, -7).Unix(), 0, "Last 7 Days"
+	case "3d":
+		return now.AddDate(0, 0, -3).Unix(), 0, "Last 3 Days"
+	case "2d":
+		return now.AddDate(0, 0, -2).Unix(), 0, "Last 2 Days"
+	case "24h":
+		return now.Add(-24 * time.Hour).Unix(), 0, "Last 24 Hours"
 	default:
 		return now.AddDate(-1, 0, 0).Unix(), 0, "1 Year"
 	}

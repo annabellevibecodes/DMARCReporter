@@ -28,8 +28,12 @@ func main() {
 		audit.EnableDebug()
 	}
 
-	if cfg.AuthPassword == "" {
-		log.Println("WARNING: AUTH_PASSWORD is not set — the application is running without authentication")
+	if cfg.AuthPassword == "" && !cfg.AuthDisabled {
+		log.Fatal("AUTH_PASSWORD is not set. Set AUTH_PASSWORD to enable authentication, " +
+			"or set AUTH_DISABLED=true to explicitly run without authentication (development only).")
+	}
+	if cfg.AuthDisabled {
+		log.Println("WARNING: AUTH_DISABLED=true — the application is running without authentication")
 	}
 
 	if cfg.IMAPHost != "" && !cfg.IMAPTLS {
@@ -72,11 +76,20 @@ func main() {
 
 	app.Use(logger.New(logger.Config{
 		// Omit query strings from access logs to avoid leaking filter params.
-		Format: "${time} ${method} ${path} ${status} ${latency}\n",
+		Format: "${time} ${ip} ${method} ${path} ${status} ${latency}\n",
 	}))
 
-	// Authentication — enabled when AUTH_PASSWORD is set.
-	if cfg.AuthPassword != "" {
+	// Prevent browsers from caching dynamic pages. Static assets under /static
+	// can still be cached by their own Cache-Control headers.
+	app.Use(func(c *fiber.Ctx) error {
+		if !strings.HasPrefix(c.Path(), "/static") {
+			c.Set("Cache-Control", "no-store")
+		}
+		return c.Next()
+	})
+
+	// Authentication — enabled unless AUTH_DISABLED=true.
+	if !cfg.AuthDisabled {
 		app.Use(basicauth.New(basicauth.Config{
 			Users: map[string]string{cfg.AuthUser: cfg.AuthPassword},
 		}))
@@ -85,7 +98,7 @@ func main() {
 	// Security headers.
 	helmetCfg := helmet.Config{
 		ContentSecurityPolicy: "default-src 'self'; " +
-			"script-src 'self' 'unsafe-inline'; " +
+			"script-src 'self'; " +
 			"style-src 'self' 'unsafe-inline'; " +
 			"img-src 'self' data:; " +
 			"media-src 'self' data:; " +
@@ -96,7 +109,7 @@ func main() {
 		ReferrerPolicy:  "strict-origin-when-cross-origin",
 		PermissionPolicy: "camera=(), microphone=(), geolocation=(), payment=()",
 	}
-	if cfg.SecureCookies {
+	if cfg.HSTSEnabled {
 		helmetCfg.HSTSMaxAge = 31536000 // include subdomains (HSTSExcludeSubdomains defaults false)
 	}
 	app.Use(helmet.New(helmetCfg))
@@ -146,15 +159,19 @@ func main() {
 	}), a.HandleEnrichClear)
 	app.Get("/export", a.HandleExport)
 	app.Get("/domains", a.HandleDomainsList)
-	app.Get("/domains/:domain", a.HandleDomainDetail)
+	// Domain and source detail pages trigger live DNS/WHOIS lookups — rate-limited.
+	detailLimiter := limiter.New(limiter.Config{Max: 30, Expiration: 1 * time.Minute})
+	app.Get("/domains/:domain", detailLimiter, a.HandleDomainDetail)
 	app.Get("/help", a.HandleHelpPage)
 	app.Get("/sources", a.HandleSourcesList)
-	app.Get("/sources/:ip", a.HandleSourceDetail)
-	app.Get("/recipients/:domain", a.HandleRecipientDetail)
-	app.Get("/api/stats", a.HandleAPIStats)
-	app.Get("/api/failure-modes", a.HandleAPIFailureModes)
-	app.Get("/api/domain-trend", a.HandleAPIDomainTrend)
-	app.Get("/api/top-failing-sources", a.HandleAPITopFailingSources)
+	app.Get("/sources/:ip", detailLimiter, a.HandleSourceDetail)
+	app.Get("/recipients/:domain", detailLimiter, a.HandleRecipientDetail)
+	// API endpoints are called by the dashboard charts on every page load.
+	apiLimiter := limiter.New(limiter.Config{Max: 60, Expiration: 1 * time.Minute})
+	app.Get("/api/stats", apiLimiter, a.HandleAPIStats)
+	app.Get("/api/failure-modes", apiLimiter, a.HandleAPIFailureModes)
+	app.Get("/api/domain-trend", apiLimiter, a.HandleAPIDomainTrend)
+	app.Get("/api/top-failing-sources", apiLimiter, a.HandleAPITopFailingSources)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	log.Printf("Starting DMARC Reporter on http://localhost%s", addr)

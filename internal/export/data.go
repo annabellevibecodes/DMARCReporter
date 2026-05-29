@@ -57,7 +57,7 @@ func Fetch(db *sqlx.DB, domain string) (*ReportData, error) {
 				break
 			}
 		}
-		records, err := database.GetDomainRecords(db, domain, 100)
+		records, err := database.GetDomainRecords(db, domain, 0, 100)
 		if err != nil {
 			return nil, err
 		}

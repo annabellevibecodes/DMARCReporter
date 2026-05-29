@@ -10,6 +10,8 @@ IMAP_MAILBOX="INBOX" \
 IMAP_PROCESSED_MAILBOX="INBOX.Processed" \
 IMAP_TLS=true \
 DEBUG=false \
+AUTH_DISABLED=false \
+AUTH_PASSWORD=secret-password \
 UPLOAD_RATE_MAX=0 \
 FETCH_RATE_MAX=0 \
 ./dmarcreporter

@@ -30,8 +30,23 @@ func (a *App) HandleSourcesList(c *fiber.Ctx) error {
 	country := strings.TrimSpace(c.Query("country"))
 	sourceIP := strings.TrimSpace(c.Query("ip"))
 	page, _ := strconv.Atoi(c.Query("page", "1"))
+	period := c.Query("period", "1y")
+	from, _, periodLabel := parsePeriod(period)
+	minMessages, _ := strconv.Atoi(c.Query("min", "1"))
+	if minMessages < 1 {
+		minMessages = 1
+	}
+	if minMessages > 1_000_000 {
+		minMessages = 1_000_000
+	}
 
-	sources, total, err := database.ListSources(a.DB, page, sourcesPageSize, envelopeFrom, disposition, country, sourceIP)
+	sortBy := c.Query("sort", "fail_rate")
+	sortDir := c.Query("dir", "desc")
+	if sortDir != "asc" && sortDir != "desc" {
+		sortDir = "desc"
+	}
+
+	sources, total, err := database.ListSources(a.DB, page, sourcesPageSize, envelopeFrom, disposition, country, sourceIP, from, minMessages, sortBy, sortDir)
 	if err != nil {
 		return err
 	}
@@ -56,7 +71,7 @@ func (a *App) HandleSourcesList(c *fiber.Ctx) error {
 	}
 	totalPages := (total + sourcesPageSize - 1) / sourcesPageSize
 	return c.Render("sources", fiber.Map{
-		"PageNums": pageWindow(page, totalPages),
+		"PageNums":            pageWindow(page, totalPages),
 		"Title":               "Sources — DMARC Reporter",
 		"Theme":               getTheme(c),
 		"ActivePage":          "sources",
@@ -69,6 +84,12 @@ func (a *App) HandleSourcesList(c *fiber.Ctx) error {
 		"Page":                page,
 		"TotalPages":          totalPages,
 		"Total":               total,
+		"PeriodOptions":       periodOptions,
+		"SelectedPeriod":      period,
+		"PeriodLabel":         periodLabel,
+		"MinMessages":         minMessages,
+		"SortBy":              sortBy,
+		"SortDir":             sortDir,
 		"IMAPEnabled":         a.Cfg.IMAPHost != "",
 		"CSRFToken":           c.Locals("csrf"),
 	}, "layouts/base")
@@ -80,40 +101,37 @@ func (a *App) HandleSourceDetail(c *fiber.Ctx) error {
 		return fiber.ErrBadRequest
 	}
 
-	records, err := database.GetSourceRecords(a.DB, ip, 100)
+	period := c.Query("period", "1y")
+	from, _, periodLabel := parsePeriod(period)
+
+	records, err := database.GetSourceRecords(a.DB, ip, from, 100)
 	if err != nil {
 		return err
 	}
 
-	var totalMsgs, totalPassed, totalFailed int
-	for _, r := range records {
-		totalMsgs += r.Count
-		if r.EvalDKIM == "pass" || r.EvalSPF == "pass" {
-			totalPassed += r.Count
-		} else {
-			totalFailed += r.Count
-		}
-	}
-	var passRate float64
-	if totalMsgs > 0 {
-		passRate = float64(totalPassed) / float64(totalMsgs) * 100
+	agg, err := database.GetSourceAggStats(a.DB, ip, from)
+	if err != nil {
+		return err
 	}
 
 	// Resolve rDNS + WHOIS (served from cache; live lookup on first visit).
 	ipInfo, _ := ipinfo.Get(a.DB, ip)
 
 	return c.Render("source_detail", fiber.Map{
-		"Title":         ip + " — DMARC Reporter",
-		"Theme":         getTheme(c),
-		"ActivePage":    "sources",
-		"IP":            ip,
-		"IPInfo":        ipInfo,
-		"Records":       records,
-		"TotalMessages": totalMsgs,
-		"TotalPassed":   totalPassed,
-		"TotalFailed":   totalFailed,
-		"PassRate":      passRate,
-		"IMAPEnabled":   a.Cfg.IMAPHost != "",
-		"CSRFToken":     c.Locals("csrf"),
+		"Title":          ip + " — DMARC Reporter",
+		"Theme":          getTheme(c),
+		"ActivePage":     "sources",
+		"IP":             ip,
+		"IPInfo":         ipInfo,
+		"Records":        records,
+		"TotalMessages":  agg.TotalMessages,
+		"TotalPassed":    agg.Passed,
+		"TotalFailed":    agg.Failed,
+		"PassRate":       agg.PassRate,
+		"PeriodOptions":  periodOptions,
+		"SelectedPeriod": period,
+		"PeriodLabel":    periodLabel,
+		"IMAPEnabled":    a.Cfg.IMAPHost != "",
+		"CSRFToken":      c.Locals("csrf"),
 	}, "layouts/base")
 }

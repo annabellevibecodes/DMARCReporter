@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"mime"
 	"regexp"
 	"time"
 
@@ -36,7 +37,7 @@ func (a *App) HandleExport(c *fiber.Ctx) error {
 	}
 	date := time.Now().UTC().Format("2006-01-02")
 	filename := fmt.Sprintf("dmarc-report-%s-%s.%s", scope, date, format)
-	c.Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	c.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 
 	switch format {
 	case "csv":

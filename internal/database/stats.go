@@ -416,21 +416,167 @@ func GetDKIMSelectorStats(db *sqlx.DB, domain string) ([]DKIMSelectorStat, error
 	return stats, err
 }
 
-// GetDomainTrend returns weekly pass/fail counts for a specific domain over the last n days.
-func GetDomainTrend(db *sqlx.DB, domain string, days int) ([]TrendPoint, error) {
+// GetDomainTrend returns weekly pass/fail counts for a specific domain.
+// If from > 0, only data from reports whose date_range_begin >= from is included.
+func GetDomainTrend(db *sqlx.DB, domain string, from int64) ([]TrendPoint, error) {
 	var points []TrendPoint
-	err := db.Select(&points, `
-		SELECT
-			strftime('%G-%V', datetime(r.date_range_begin, 'unixepoch')) AS week,
-			COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass'
-				THEN rr.count ELSE 0 END), 0) AS passed,
-			COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass'
-				THEN rr.count ELSE 0 END), 0) AS failed
-		FROM reports r
-		JOIN record_rows rr ON rr.report_id = r.id
-		WHERE r.domain = ?
-		  AND r.date_range_begin >= ?
-		GROUP BY week
-		ORDER BY week`, domain, cutoffUnix(days))
+	var err error
+	if from > 0 {
+		err = db.Select(&points, `
+			SELECT
+				strftime('%G-%V', datetime(r.date_range_begin, 'unixepoch')) AS week,
+				COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass'
+					THEN rr.count ELSE 0 END), 0) AS passed,
+				COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass'
+					THEN rr.count ELSE 0 END), 0) AS failed
+			FROM reports r
+			JOIN record_rows rr ON rr.report_id = r.id
+			WHERE r.domain = ? AND r.date_range_begin >= ?
+			GROUP BY week
+			ORDER BY week`, domain, from)
+	} else {
+		err = db.Select(&points, `
+			SELECT
+				strftime('%G-%V', datetime(r.date_range_begin, 'unixepoch')) AS week,
+				COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass'
+					THEN rr.count ELSE 0 END), 0) AS passed,
+				COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass'
+					THEN rr.count ELSE 0 END), 0) AS failed
+			FROM reports r
+			JOIN record_rows rr ON rr.report_id = r.id
+			WHERE r.domain = ?
+			GROUP BY week
+			ORDER BY week`, domain)
+	}
 	return points, err
+}
+
+// DomainAggStats holds period-scoped aggregate stats for a single policy domain.
+type DomainAggStats struct {
+	TotalMessages    int64 `db:"total_messages"`
+	Passed           int64 `db:"passed"`
+	Failed           int64 `db:"failed"`
+	UniqueSenders    int64 `db:"unique_senders"`
+	UniqueRecipients int64 `db:"unique_recipients"`
+	PassRate         float64
+}
+
+// GetDomainAggStats returns aggregate stats for a policy domain, optionally scoped to from.
+func GetDomainAggStats(db *sqlx.DB, domain string, from int64) (*DomainAggStats, error) {
+	var s DomainAggStats
+	var err error
+	if from > 0 {
+		err = db.Get(&s, `
+			SELECT
+				COALESCE(SUM(rr.count), 0) AS total_messages,
+				COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END), 0) AS passed,
+				COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END), 0) AS failed,
+				COUNT(DISTINCT rr.source_ip) AS unique_senders,
+				COUNT(DISTINCT CASE WHEN rr.envelope_to != '' AND rr.envelope_to != '<>' THEN rr.envelope_to END) AS unique_recipients
+			FROM record_rows rr
+			JOIN reports r ON r.id = rr.report_id
+			WHERE r.domain = ? AND r.date_range_begin >= ?`, domain, from)
+	} else {
+		err = db.Get(&s, `
+			SELECT
+				COALESCE(SUM(rr.count), 0) AS total_messages,
+				COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END), 0) AS passed,
+				COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END), 0) AS failed,
+				COUNT(DISTINCT rr.source_ip) AS unique_senders,
+				COUNT(DISTINCT CASE WHEN rr.envelope_to != '' AND rr.envelope_to != '<>' THEN rr.envelope_to END) AS unique_recipients
+			FROM record_rows rr
+			JOIN reports r ON r.id = rr.report_id
+			WHERE r.domain = ?`, domain)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if s.TotalMessages > 0 {
+		s.PassRate = float64(s.Passed) / float64(s.TotalMessages) * 100
+	}
+	return &s, nil
+}
+
+// SourceAggStats holds period-scoped aggregate stats for a single source IP.
+type SourceAggStats struct {
+	TotalMessages int64 `db:"total_messages"`
+	Passed        int64 `db:"passed"`
+	Failed        int64 `db:"failed"`
+	PassRate      float64
+}
+
+// GetSourceAggStats returns aggregate stats for a source IP, optionally scoped to from.
+func GetSourceAggStats(db *sqlx.DB, ip string, from int64) (*SourceAggStats, error) {
+	var s SourceAggStats
+	var err error
+	if from > 0 {
+		err = db.Get(&s, `
+			SELECT
+				COALESCE(SUM(rr.count), 0) AS total_messages,
+				COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END), 0) AS passed,
+				COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END), 0) AS failed
+			FROM record_rows rr
+			JOIN reports r ON r.id = rr.report_id
+			WHERE rr.source_ip = ? AND r.date_range_begin >= ?`, ip, from)
+	} else {
+		err = db.Get(&s, `
+			SELECT
+				COALESCE(SUM(rr.count), 0) AS total_messages,
+				COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END), 0) AS passed,
+				COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END), 0) AS failed
+			FROM record_rows rr
+			WHERE rr.source_ip = ?`, ip)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if s.TotalMessages > 0 {
+		s.PassRate = float64(s.Passed) / float64(s.TotalMessages) * 100
+	}
+	return &s, nil
+}
+
+// EnvelopeFromStat holds aggregate stats grouped by envelope_from domain.
+type EnvelopeFromStat struct {
+	EnvelopeFrom  string  `db:"envelope_from"`
+	TotalMessages int64   `db:"total_messages"`
+	Passed        int64   `db:"passed"`
+	Failed        int64   `db:"failed"`
+	PassRate      float64 `db:"pass_rate"`
+}
+
+// GetEnvelopeFromBreakdown returns per-envelope_from aggregate stats for a policy domain.
+func GetEnvelopeFromBreakdown(db *sqlx.DB, domain string, from int64) ([]EnvelopeFromStat, error) {
+	var stats []EnvelopeFromStat
+	var err error
+	if from > 0 {
+		err = db.Select(&stats, `
+			SELECT
+				CASE WHEN rr.envelope_from = '' OR rr.envelope_from IS NULL THEN '(none)' ELSE rr.envelope_from END AS envelope_from,
+				SUM(rr.count) AS total_messages,
+				SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END) AS passed,
+				SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END) AS failed,
+				ROUND(100.0 * SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END)
+					/ NULLIF(SUM(rr.count), 0), 1) AS pass_rate
+			FROM record_rows rr
+			JOIN reports r ON r.id = rr.report_id
+			WHERE r.domain = ? AND r.date_range_begin >= ?
+			GROUP BY rr.envelope_from
+			ORDER BY total_messages DESC`, domain, from)
+	} else {
+		err = db.Select(&stats, `
+			SELECT
+				CASE WHEN rr.envelope_from = '' OR rr.envelope_from IS NULL THEN '(none)' ELSE rr.envelope_from END AS envelope_from,
+				SUM(rr.count) AS total_messages,
+				SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END) AS passed,
+				SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END) AS failed,
+				ROUND(100.0 * SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END)
+					/ NULLIF(SUM(rr.count), 0), 1) AS pass_rate
+			FROM record_rows rr
+			JOIN reports r ON r.id = rr.report_id
+			WHERE r.domain = ?
+			GROUP BY rr.envelope_from
+			ORDER BY total_messages DESC`, domain)
+	}
+	return stats, err
 }

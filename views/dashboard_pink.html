@@ -52,19 +52,25 @@
     {{if .FlashMsg}}
     <div style="background:#fff0f3;border-left:4px solid #ff2d8b;border-radius:14px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#5a1837;">{{.FlashMsg}}</div>
     {{end}}
+    {{if .SelectedEF}}
+    <div style="background:#fff8ec;border-left:4px solid #f59e0b;border-radius:14px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#5a1837;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span>Showing outbound mail from <strong>{{.SelectedEF}}</strong> only — third-party senders and spoofed mail are excluded.</span>
+      <a href="/domains/{{.SelectedEF}}" style="color:#ff2d8b;font-weight:600;text-decoration:none;white-space:nowrap;">View full DMARC coverage &#8594;</a>
+    </div>
+    {{end}}
 
     <form method="GET" action="/" style="margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <select name="period" onchange="this.form.submit()" style="border:1.5px solid #ffd1e3;border-radius:999px;padding:6px 14px;font-family:'Manrope',sans-serif;font-size:12px;color:#5a1837;background:#fff;cursor:pointer;outline:none;">
+      <select name="period" data-autosubmit style="border:1.5px solid #ffd1e3;border-radius:999px;padding:6px 14px;font-family:'Manrope',sans-serif;font-size:12px;color:#5a1837;background:#fff;cursor:pointer;outline:none;">
         {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
       </select>
       {{if .EFDomains}}
-      <label style="font-size:12px;font-weight:600;color:#b8438a;letter-spacing:.08em;">Sender</label>
-      <select name="ef" onchange="this.form.submit()" style="border:1.5px solid #ffd1e3;border-radius:999px;padding:6px 14px;font-family:'Manrope',sans-serif;font-size:12px;color:#5a1837;background:#fff;cursor:pointer;outline:none;">
-        <option value="">All domains</option>
+      <label style="font-size:12px;font-weight:600;color:#b8438a;letter-spacing:.08em;" title="Filters to mail where this domain was the actual SMTP MAIL FROM sender. Excludes third-party senders and spoofed mail.">Outbound domain (MAIL FROM)</label>
+      <select name="ef" data-autosubmit style="border:1.5px solid #ffd1e3;border-radius:999px;padding:6px 14px;font-family:'Manrope',sans-serif;font-size:12px;color:#5a1837;background:#fff;cursor:pointer;outline:none;">
+        <option value="">All senders</option>
         {{range .EFDomains}}<option value="{{.}}"{{if eq . $.SelectedEF}} selected{{end}}>{{.}}</option>{{end}}
       </select>
       {{end}}
-      {{if .SelectedEF}}<a href="/?period={{.SelectedPeriod}}" style="font-size:11px;color:#ff2d8b;text-decoration:none;">&#10005; clear sender</a>{{end}}
+      {{if .SelectedEF}}<a href="/?period={{.SelectedPeriod}}" style="font-size:11px;color:#ff2d8b;text-decoration:none;">&#10005; clear</a>{{end}}
     </form>
 
     <!-- MAIN GRID -->

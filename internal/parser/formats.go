@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 )
 
@@ -74,7 +75,9 @@ func unzip(data []byte) (io.Reader, error) {
 		return nil, err
 	}
 	for _, f := range zr.File {
-		lower := strings.ToLower(f.Name)
+		// path.Base strips any directory components from the entry name,
+		// preventing path traversal sequences (e.g. ../../evil.xml).
+		lower := strings.ToLower(path.Base(f.Name))
 		if !strings.HasSuffix(lower, ".xml") && !strings.HasSuffix(lower, ".xml.gz") {
 			continue
 		}

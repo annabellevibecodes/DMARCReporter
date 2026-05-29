@@ -1,17 +1,21 @@
 <h1>Domain: {{.Domain}}</h1>
 
-<div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;flex-wrap:wrap;">
-    <span style="font-size:0.85rem;color:var(--pico-muted-color);">Export report:</span>
+<form method="GET" action="/domains/{{.Domain}}" style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;flex-wrap:wrap;">
+    <select name="period" data-autosubmit style="width:auto;margin:0;">
+        {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+    <span style="font-size:0.85rem;color:var(--pico-muted-color);">Export:</span>
     <a href="/export?format=csv&domain={{.Domain}}"  role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">CSV</a>
     <a href="/export?format=xlsx&domain={{.Domain}}" role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">XLSX</a>
     <a href="/export?format=pdf&domain={{.Domain}}"  role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">PDF</a>
     <a href="/export?format=docx&domain={{.Domain}}" role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">DOCX</a>
-</div>
+</form>
 
 <div class="kpi-grid">
     <article class="kpi-card">
         <header>Total Messages</header>
         <p class="kpi-value">{{.TotalMessages}}</p>
+        <p style="font-size:0.75rem;color:var(--pico-muted-color);margin:0;">All DMARC-checked mail for this policy domain — your outbound mail, third-party senders, and spoofing attempts. Period: {{.PeriodLabel}}.</p>
     </article>
     <article class="kpi-card {{if ge .PassRate 95.0}}pass{{else if ge .PassRate 80.0}}warn{{else}}fail{{end}}">
         <header>Pass Rate</header>
@@ -121,10 +125,46 @@
 <br/>
 
 <article>
-    <header>Compliance Trend (last 90 days)</header>
-    <canvas id="domain-trend-chart"></canvas>
+    <header>Compliance Trend ({{.PeriodLabel}})</header>
+    <div style="position:relative;height:220px;">
+        <canvas id="domain-trend-chart"></canvas>
+    </div>
     <script type="application/json" id="domain-trend-data">{{.DomainTrendData}}</script>
 </article>
+
+{{if .EnvelopeFromBreakdown}}
+<h2>Outbound Domain Breakdown <small style="font-size:0.75rem;font-weight:normal;color:var(--pico-muted-color);">(envelope_from / MAIL FROM)</small></h2>
+<p style="font-size:0.85rem;color:var(--pico-muted-color);margin-top:-0.5rem;">
+    Shows who actually sent mail that receivers DMARC-checked against <strong>{{.Domain}}</strong>'s policy.
+    Your own outbound mail uses <code>{{.Domain}}</code> as the envelope sender and should pass 100%.
+    Other rows are third-party senders, forwarders, or spoofing attempts — the source of most failures.
+</p>
+<table>
+    <thead>
+        <tr>
+            <th>Envelope From (MAIL FROM)</th>
+            <th>Messages</th>
+            <th>Passed</th>
+            <th>Failed</th>
+            <th>Pass Rate</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .EnvelopeFromBreakdown}}
+        <tr class="{{if ge .PassRate 95.0}}row-pass{{else if ge .PassRate 80.0}}row-warn{{else}}row-fail{{end}}">
+            <td><code>{{.EnvelopeFrom}}</code></td>
+            <td>{{.TotalMessages}}</td>
+            <td>{{.Passed}}</td>
+            <td>{{.Failed}}</td>
+            <td>
+                <progress class="pass-bar" value="{{printf "%.0f" .PassRate}}" max="100"></progress>
+                <span class="badge {{if ge .PassRate 95.0}}badge-pass{{else if ge .PassRate 80.0}}badge-warn{{else}}badge-fail{{end}}">{{printf "%.1f" .PassRate}}%</span>
+            </td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+{{end}}
 
 {{if .DKIMSelectors}}
 <article>

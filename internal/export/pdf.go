@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/jung-kurt/gofpdf"
+	"github.com/go-pdf/fpdf"
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 
 // WritePDF writes the report as a PDF to w.
 func WritePDF(w io.Writer, rd *ReportData) error {
-	pdf := gofpdf.New("P", "mm", "A4", "")
+	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(pdfMargin, 20, pdfMargin)
 	pdf.SetAutoPageBreak(true, 18)
 
@@ -152,7 +152,7 @@ func WritePDF(w io.Writer, rd *ReportData) error {
 	return pdf.Output(w)
 }
 
-func pdfSectionHeader(pdf *gofpdf.Fpdf, title string) {
+func pdfSectionHeader(pdf *fpdf.Fpdf, title string) {
 	pdf.SetFont("Helvetica", "B", 11)
 	pdf.SetTextColor(colorNavyR, colorNavyG, colorNavyB)
 	pdf.SetFillColor(colorGrayR, colorGrayG, colorGrayB)
@@ -160,7 +160,7 @@ func pdfSectionHeader(pdf *gofpdf.Fpdf, title string) {
 	pdf.Ln(1)
 }
 
-func pdfKVTable(pdf *gofpdf.Fpdf, rows [][2]string) {
+func pdfKVTable(pdf *fpdf.Fpdf, rows [][2]string) {
 	pdf.SetFont("Helvetica", "", 9)
 	for i, kv := range rows {
 		if i%2 == 0 {
@@ -182,7 +182,7 @@ type pdfCol struct {
 	Align  string
 }
 
-func pdfTable(pdf *gofpdf.Fpdf, cols []pdfCol, rows [][]string) {
+func pdfTable(pdf *fpdf.Fpdf, cols []pdfCol, rows [][]string) {
 	// Header row
 	pdf.SetFillColor(colorNavyR, colorNavyG, colorNavyB)
 	pdf.SetTextColor(255, 255, 255)

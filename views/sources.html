@@ -9,7 +9,10 @@
 
 <form class="filter-form" method="get" action="/sources">
     {{if .Disposition}}<input type="hidden" name="disposition" value="{{.Disposition}}">{{end}}
-    <div class="filter-row">
+    <div class="filter-row" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;">
+        <select name="period" data-autosubmit style="width:auto;margin:0;">
+            {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
+        </select>
         <select name="envelope_from" style="max-width:260px">
             <option value="">— All envelope_from domains —</option>
             {{range .EnvelopeFromDomains}}
@@ -18,7 +21,12 @@
         </select>
         <input type="text" name="ip" value="{{.SourceIP}}" placeholder="Filter by IP" style="max-width:260px;" autocomplete="off" spellcheck="false">
         <button type="submit">Filter</button>
-        {{if or .EnvelopeFrom .SourceIP}}<a href="/sources{{if .Disposition}}?disposition={{.Disposition}}{{end}}" role="button" class="secondary outline">Clear</a>{{end}}
+        {{if or .EnvelopeFrom .SourceIP}}<a href="/sources?period={{.SelectedPeriod}}&min={{.MinMessages}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}" role="button" class="secondary outline">Clear</a>{{end}}
+    </div>
+    <div class="filter-row" style="display:flex;align-items:center;gap:12px;width:100%;margin-top:0.5rem;">
+        <label for="min-msg-input" style="margin:0;white-space:nowrap;font-size:0.9rem;">Min. messages:</label>
+        <input id="min-msg-slider" type="range" name="" min="1" max="1000" value="{{.MinMessages}}" style="width:180px;margin:0;">
+        <input id="min-msg-input" type="number" name="min" min="1" value="{{.MinMessages}}" style="width:80px;margin:0;" inputmode="numeric">
     </div>
 </form>
 
@@ -26,11 +34,16 @@
 <table>
     <thead>
         <tr>
-            <th>Source IP</th>
-            <th>Total Messages</th>
-            <th>Passed</th>
-            <th>Failed</th>
-            <th>Fail Rate</th>
+            {{$base := printf "/sources?period=%s&min=%d" .SelectedPeriod .MinMessages}}
+            {{if .EnvelopeFrom}}{{$base = printf "%s&envelope_from=%s" $base .EnvelopeFrom}}{{end}}
+            {{if .SourceIP}}{{$base = printf "%s&ip=%s" $base .SourceIP}}{{end}}
+            {{if .Disposition}}{{$base = printf "%s&disposition=%s" $base .Disposition}}{{end}}
+            {{if .Country}}{{$base = printf "%s&country=%s" $base .Country}}{{end}}
+            <th><a href="{{$base}}&sort=ip&dir={{if and (eq $.SortBy "ip") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Source IP{{if eq $.SortBy "ip"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
+            <th><a href="{{$base}}&sort=messages&dir={{if and (eq $.SortBy "messages") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Total Messages{{if eq $.SortBy "messages"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
+            <th><a href="{{$base}}&sort=passed&dir={{if and (eq $.SortBy "passed") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Passed{{if eq $.SortBy "passed"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
+            <th><a href="{{$base}}&sort=failed&dir={{if and (eq $.SortBy "failed") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Failed{{if eq $.SortBy "failed"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
+            <th><a href="{{$base}}&sort=fail_rate&dir={{if and (eq $.SortBy "fail_rate") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Fail Rate{{if eq $.SortBy "fail_rate"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
         </tr>
     </thead>
     <tbody>
@@ -56,14 +69,14 @@
 {{if gt .TotalPages 1}}
 <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:1rem;">
     {{if gt .Page 1}}
-    <a href="/sources?page={{add .Page -1}}{{if .EnvelopeFrom}}&envelope_from={{.EnvelopeFrom}}{{end}}{{if .SourceIP}}&ip={{.SourceIP}}{{end}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}{{if .Country}}&country={{.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">← Prev</a>
+    <a href="/sources?page={{add .Page -1}}&period={{.SelectedPeriod}}&min={{.MinMessages}}&sort={{.SortBy}}&dir={{.SortDir}}{{if .EnvelopeFrom}}&envelope_from={{.EnvelopeFrom}}{{end}}{{if .SourceIP}}&ip={{.SourceIP}}{{end}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}{{if .Country}}&country={{.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">← Prev</a>
     {{end}}
     {{range .PageNums}}
-    {{if eq . $.Page}}<span style="padding:2px 8px;font-weight:700;">{{.}}</span>{{else}}<a href="/sources?page={{.}}{{if $.EnvelopeFrom}}&envelope_from={{$.EnvelopeFrom}}{{end}}{{if $.SourceIP}}&ip={{$.SourceIP}}{{end}}{{if $.Disposition}}&disposition={{$.Disposition}}{{end}}{{if $.Country}}&country={{$.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">{{.}}</a>{{end}}
+    {{if eq . $.Page}}<span style="padding:2px 8px;font-weight:700;">{{.}}</span>{{else}}<a href="/sources?page={{.}}&period={{$.SelectedPeriod}}&min={{$.MinMessages}}&sort={{$.SortBy}}&dir={{$.SortDir}}{{if $.EnvelopeFrom}}&envelope_from={{$.EnvelopeFrom}}{{end}}{{if $.SourceIP}}&ip={{$.SourceIP}}{{end}}{{if $.Disposition}}&disposition={{$.Disposition}}{{end}}{{if $.Country}}&country={{$.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">{{.}}</a>{{end}}
     {{end}}
     {{if lt .Page .TotalPages}}
-    <a href="/sources?page={{add .Page 1}}{{if .EnvelopeFrom}}&envelope_from={{.EnvelopeFrom}}{{end}}{{if .SourceIP}}&ip={{.SourceIP}}{{end}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}{{if .Country}}&country={{.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">Next →</a>
-    <a href="/sources?page={{.TotalPages}}{{if .EnvelopeFrom}}&envelope_from={{.EnvelopeFrom}}{{end}}{{if .SourceIP}}&ip={{.SourceIP}}{{end}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}{{if .Country}}&country={{.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">Last ({{.TotalPages}})</a>
+    <a href="/sources?page={{add .Page 1}}&period={{.SelectedPeriod}}&min={{.MinMessages}}&sort={{.SortBy}}&dir={{.SortDir}}{{if .EnvelopeFrom}}&envelope_from={{.EnvelopeFrom}}{{end}}{{if .SourceIP}}&ip={{.SourceIP}}{{end}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}{{if .Country}}&country={{.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">Next →</a>
+    <a href="/sources?page={{.TotalPages}}&period={{.SelectedPeriod}}&min={{.MinMessages}}&sort={{.SortBy}}&dir={{.SortDir}}{{if .EnvelopeFrom}}&envelope_from={{.EnvelopeFrom}}{{end}}{{if .SourceIP}}&ip={{.SourceIP}}{{end}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}{{if .Country}}&country={{.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">Last ({{.TotalPages}})</a>
     {{end}}
     <span style="font-size:0.9rem;color:var(--pico-muted-color);margin-left:4px;">Page {{.Page}} of {{.TotalPages}} &middot; {{.Total}} senders</span>
 </div>

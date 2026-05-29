@@ -50,20 +50,26 @@
   {{if .FlashMsg}}
   <div style="margin:12px 56px 0;padding:10px 16px;border-left:4px solid #6b1f24;font-style:italic;font-size:13px;background:rgba(107,31,36,0.06);color:#6b1f24;">{{.FlashMsg}}</div>
   {{end}}
+  {{if .SelectedEF}}
+  <div style="margin:10px 56px 0;padding:10px 16px;border-left:4px solid #b08d3e;font-size:13px;background:rgba(176,141,62,0.07);color:#3a3327;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+    <span style="font-family:'Cormorant Garamond',serif;font-style:italic;">Showing outbound mail from <strong>{{.SelectedEF}}</strong> only — third-party senders and spoofed mail are excluded from these figures.</span>
+    <a href="/domains/{{.SelectedEF}}" style="color:#0e2a4a;font-weight:600;text-decoration:none;white-space:nowrap;font-style:normal;">View full DMARC coverage &#8599;</a>
+  </div>
+  {{end}}
 
   <form method="GET" action="/" style="margin:10px 56px 0;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#6b5e3c;">
     <span>Reporting period:</span>
-    <select name="period" onchange="this.form.submit()" style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#0e2a4a;background:#f6f1e7;border:1px solid #0e2a4a;padding:2px 8px;cursor:pointer;outline:none;">
+    <select name="period" data-autosubmit style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#0e2a4a;background:#f6f1e7;border:1px solid #0e2a4a;padding:2px 8px;cursor:pointer;outline:none;">
       {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
     </select>
     {{if .EFDomains}}
-    <span>Sender domain:</span>
-    <select name="ef" onchange="this.form.submit()" style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#0e2a4a;background:#f6f1e7;border:1px solid #0e2a4a;padding:2px 8px;cursor:pointer;outline:none;">
-      <option value="">All domains</option>
+    <span title="Filters to mail where this domain was the actual SMTP MAIL FROM sender. Excludes third-party senders and spoofed mail.">Outbound domain (MAIL FROM):</span>
+    <select name="ef" data-autosubmit style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#0e2a4a;background:#f6f1e7;border:1px solid #0e2a4a;padding:2px 8px;cursor:pointer;outline:none;">
+      <option value="">All senders</option>
       {{range .EFDomains}}<option value="{{.}}"{{if eq . $.SelectedEF}} selected{{end}}>{{.}}</option>{{end}}
     </select>
     {{end}}
-    {{if .SelectedEF}}<a href="/?period={{.SelectedPeriod}}" style="color:#6b1f24;text-decoration:none;">&#10005; clear sender</a>{{end}}
+    {{if .SelectedEF}}<a href="/?period={{.SelectedPeriod}}" style="color:#6b1f24;text-decoration:none;">&#10005; clear</a>{{end}}
   </form>
 
   <!-- CONTENT GRID -->

@@ -4,6 +4,7 @@ package ipinfo
 import (
 	"context"
 	"net"
+	"net/mail"
 	"regexp"
 	"strings"
 	"time"
@@ -163,13 +164,22 @@ func parseWhois(raw string, info *Info) {
 	info.WhoisCIDR = get("CIDR", "inetnum", "NetRange")
 
 	// Abuse contact.
-	info.WhoisAbuse = get("OrgAbuseEmail", "abuse-mailbox", "AbuseEmail", "abuse-c")
+	info.WhoisAbuse = strings.TrimRight(get("OrgAbuseEmail", "abuse-mailbox", "AbuseEmail", "abuse-c"), "'\"`,;.")
 
 	// If OrgAbuseEmail wasn't present look for any abuse@ address in the raw text.
 	if info.WhoisAbuse == "" {
 		re := regexp.MustCompile(`(?i)abuse[^:\s]*@[^\s]+`)
 		if m := re.FindString(raw); m != "" {
-			info.WhoisAbuse = m
+			info.WhoisAbuse = strings.TrimRight(m, "'\"`,;.")
+		}
+	}
+
+	// Validate the abuse contact is a syntactically valid email address.
+	// Reject anything that isn't — a malicious WHOIS response could otherwise
+	// inject arbitrary content into the mailto: href on the source detail page.
+	if info.WhoisAbuse != "" {
+		if _, err := mail.ParseAddress(info.WhoisAbuse); err != nil {
+			info.WhoisAbuse = ""
 		}
 	}
 }

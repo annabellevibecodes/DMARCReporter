@@ -48,7 +48,7 @@ func (a *App) HandleAPIFailureModes(c *fiber.Ctx) error {
 
 func (a *App) HandleAPIDomainTrend(c *fiber.Ctx) error {
 	domain := c.Query("domain")
-	if domain == "" {
+	if domain == "" || len(domain) > 253 || !domainRe.MatchString(domain) {
 		return fiber.ErrBadRequest
 	}
 	days, _ := strconv.Atoi(c.Query("days", "90"))
@@ -56,7 +56,7 @@ func (a *App) HandleAPIDomainTrend(c *fiber.Ctx) error {
 		days = 90
 	}
 
-	trend, err := database.GetDomainTrend(a.DB, domain, days)
+	trend, err := database.GetDomainTrend(a.DB, domain, time.Now().AddDate(0, 0, -days).Unix())
 	if err != nil {
 		return err
 	}

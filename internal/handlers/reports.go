@@ -19,12 +19,20 @@ func (a *App) HandleReportsList(c *fiber.Ctx) error {
 	dateFromStr := c.Query("date_from")
 	dateToStr := c.Query("date_to")
 
+	sortBy := c.Query("sort", "date_begin")
+	sortDir := c.Query("dir", "desc")
+	if sortDir != "asc" && sortDir != "desc" {
+		sortDir = "desc"
+	}
+
 	filter := database.ReportFilter{
 		Domain:   domain,
 		OrgName:  orgName,
 		ReportID: reportID,
 		Page:     page,
 		PageSize: pageSize,
+		SortBy:   sortBy,
+		SortDir:  sortDir,
 	}
 	if dateFromStr != "" {
 		if t, err := time.Parse("2006-01-02", dateFromStr); err == nil {
@@ -70,6 +78,8 @@ func (a *App) HandleReportsList(c *fiber.Ctx) error {
 		"DateTo":        dateToStr,
 		"ReportDomains": reportDomains,
 		"ReportOrgs":    reportOrgs,
+		"SortBy":        sortBy,
+		"SortDir":       sortDir,
 		"IMAPEnabled":   a.Cfg.IMAPHost != "",
 		"FlashKind":     flashKind,
 		"FlashMsg":      flashMsg,

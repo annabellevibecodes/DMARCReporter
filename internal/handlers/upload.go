@@ -47,7 +47,7 @@ func (a *App) HandleUploadSubmit(c *fiber.Ctx) error {
 
 	for _, fh := range files {
 		if fh.Size > maxUploadSize {
-			a.setFlash(c, "error", fmt.Sprintf("File %q exceeds 10 MB limit.", fh.Filename))
+			a.setFlash(c, "error", "File exceeds the 10 MB limit.")
 			return c.Redirect("/upload")
 		}
 

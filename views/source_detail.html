@@ -1,5 +1,11 @@
 <h1>Source IP: {{.IP}}</h1>
 
+<form method="GET" action="/sources/{{.IP}}" style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;flex-wrap:wrap;">
+    <select name="period" data-autosubmit style="width:auto;margin:0;">
+        {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+</form>
+
 {{if .IPInfo}}
 <article class="ip-info-card">
     <header>IP Intelligence</header>
@@ -30,6 +36,7 @@
     <article class="kpi-card">
         <header>Total Messages</header>
         <p class="kpi-value">{{.TotalMessages}}</p>
+        <p style="font-size:0.75rem;color:var(--pico-muted-color);margin:0;">Period: {{.PeriodLabel}}.</p>
     </article>
     <article class="kpi-card {{if ge .PassRate 95.0}}pass{{else if ge .PassRate 80.0}}warn{{else}}fail{{end}}">
         <header>Pass Rate</header>

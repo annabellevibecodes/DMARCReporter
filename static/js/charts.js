@@ -27,6 +27,7 @@ function initTrendChart(canvasId, data) {
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: { position: 'top' },
                 title: { display: false },
@@ -256,4 +257,29 @@ function initSelectorBarChart(canvasId, dataScriptId) {
 // Auto-initialise the DKIM selector bar chart on domain detail pages.
 (function () {
     initSelectorBarChart('dkim-selector-chart', 'dkim-selector-data');
+}());
+
+// Sync the min-messages slider and number input on the sources page.
+(function () {
+    var slider = document.getElementById('min-msg-slider');
+    var input  = document.getElementById('min-msg-input');
+    if (!slider || !input) return;
+    slider.addEventListener('input', function () {
+        input.value = this.value;
+    });
+    input.addEventListener('input', function () {
+        var v = parseInt(this.value, 10);
+        if (!isNaN(v) && v >= 1) {
+            slider.value = Math.min(v, parseInt(slider.max, 10));
+        }
+    });
+}());
+
+// Auto-submit the enclosing form when a [data-autosubmit] select changes.
+// Replaces inline onchange="this.form.submit()" handlers so CSP script-src 'self'
+// does not need 'unsafe-inline'.
+(function () {
+    document.querySelectorAll('select[data-autosubmit]').forEach(function (sel) {
+        sel.addEventListener('change', function () { this.form.submit(); });
+    });
 }());

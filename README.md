@@ -10,8 +10,11 @@ A web application for parsing, storing, and visualising DMARC aggregate reports.
 - Fetch reports directly from an IMAP mailbox; processed emails are moved to a configurable subfolder
 - Dashboard with pass/fail statistics, failure modes, top failing sources, and a weekly trend chart
 - Three UI themes — **Goth** (terminal), **Pink** (Y2K glam), **Blue** (newspaper) — switchable at any time, persisted via cookie
-- Browse reports, domains, and source IPs
-- Filter reports by domain and date range
+- DKIM selector statistics on domain and report detail pages
+- Management report export in CSV, XLSX, PDF, and DOCX
+- Browse reports, domains, and source IPs with sortable column headers
+- Filter reports by domain and date range; filter sources by IP, envelope-from, disposition, and minimum message count (slider)
+- Reporting period selector on all list pages — All Time, 2 Years, 1 Year, 6/3 Months, Last Month, 30/14/7/3/2 Days, Last 24 Hours
 - HTTP Basic Auth with configurable username and password
 - Rate limiting on upload and IMAP fetch endpoints
 - SQLite storage — no external database required
@@ -64,7 +67,9 @@ All configuration is via environment variables. Every variable has a sensible de
 | `SECURE_COOKIES` | `false` | Set to `true` when serving over HTTPS to enable the `Secure` flag on cookies and HSTS |
 | `DEBUG` | `false` | Set to `true` to emit verbose debug logs to stdout and syslog |
 | `AUTH_USER` | `admin` | HTTP Basic Auth username |
-| `AUTH_PASSWORD` | _(unset)_ | HTTP Basic Auth password. Authentication is disabled when unset. |
+| `AUTH_PASSWORD` | _(required)_ | HTTP Basic Auth password. The application refuses to start unless this is set. |
+| `AUTH_DISABLED` | `false` | Set to `true` to run without authentication. **Development only — never use in production.** |
+| `HSTS_ENABLED` | `false` | Set to `true` to send `Strict-Transport-Security` headers. Enable whenever the application is served over HTTPS. |
 | `UPLOAD_RATE_MAX` | `20` | Maximum file uploads per minute per IP (0 to disable) |
 | `FETCH_RATE_MAX` | `3` | Maximum IMAP fetch requests per 5 minutes per IP (0 to disable) |
 | `IMAP_HOST` | _(unset)_ | IMAP server hostname. IMAP is disabled when unset. |
@@ -113,10 +118,24 @@ The subfolder is created automatically if it does not exist.
 | Report detail | `/reports/:id` | Individual report with per-IP record breakdown |
 | Domains | `/domains` | All domains with aggregate message counts |
 | Domain detail | `/domains/:domain` | Per-domain records across all reports |
-| Sources | `/sources` | Top source IPs by message volume |
+| Sources | `/sources` | All source IPs, filterable by period, envelope-from, IP, and minimum message count |
 | Source detail | `/sources/:ip` | Per-IP records across all reports |
+| Export | `/export` | Management report download (CSV, XLSX, PDF, DOCX); optional `?domain=` filter |
 
 A JSON endpoint at `/api/stats?days=90` returns trend data for programmatic use.
+
+### Exporting a management report
+
+Navigate to **Export** in the navigation bar. Choose a domain (or leave blank for all domains) and a format:
+
+| Format | Description |
+|--------|-------------|
+| CSV | Flat spreadsheet, one row per DMARC record |
+| XLSX | Excel workbook |
+| PDF | Formatted report document |
+| DOCX | Word-compatible document |
+
+The downloaded file is named `dmarc-report-<domain|all>-<date>.<format>`.
 
 ### Switching themes
 
@@ -198,7 +217,7 @@ The table below lists every connection the application makes or accepts. Use it 
 
 ## Security notes
 
-- HTTP Basic Auth is enabled when `AUTH_PASSWORD` is set; the application logs a warning at startup if it is unset
+- `AUTH_PASSWORD` is required at startup; the application refuses to start without it unless `AUTH_DISABLED=true` is explicitly set (development only)
 - CSRF tokens are required on all state-mutating POST requests
 - Flash messages use `HttpOnly`, `Secure`, and `SameSite=Lax` cookies
 - HTTP security headers are set on all responses (CSP, X-Frame-Options, Referrer-Policy, Permissions-Policy)
