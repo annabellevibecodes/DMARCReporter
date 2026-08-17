@@ -66,6 +66,7 @@ func (a *App) HandleReportsList(c *fiber.Ctx) error {
 		"Title":         "Reports — DMARC Reporter",
 		"Theme":         getTheme(c),
 		"ActivePage":    "reports",
+		"ReportsTab":    "dmarc",
 		"Reports":       reports,
 		"Page":          page,
 		"TotalPages":    totalPages,
@@ -80,11 +81,21 @@ func (a *App) HandleReportsList(c *fiber.Ctx) error {
 		"ReportOrgs":    reportOrgs,
 		"SortBy":        sortBy,
 		"SortDir":       sortDir,
-		"IMAPEnabled":   a.Cfg.IMAPHost != "",
+		"IMAPEnabled":   a.FetchEnabled(),
 		"FlashKind":     flashKind,
 		"FlashMsg":      flashMsg,
 		"CSRFToken":     c.Locals("csrf"),
 	}, "layouts/base")
+}
+
+// HandleReportsRedirect sends the legacy bare /reports path to the new
+// canonical /reports/dmarc location, preserving any querystring filters.
+func (a *App) HandleReportsRedirect(c *fiber.Ctx) error {
+	target := "/reports/dmarc"
+	if qs := c.Request().URI().QueryString(); len(qs) > 0 {
+		target += "?" + string(qs)
+	}
+	return c.Redirect(target)
 }
 
 func (a *App) HandleReportXML(c *fiber.Ctx) error {
@@ -165,7 +176,7 @@ func (a *App) HandleReportDetail(c *fiber.Ctx) error {
 		"HasXML":       xmlData != "",
 		"Mismatches":   mismatches,
 		"DKIMByRecord": dkimByRecord,
-		"IMAPEnabled":  a.Cfg.IMAPHost != "",
+		"IMAPEnabled":  a.FetchEnabled(),
 		"CSRFToken":    c.Locals("csrf"),
 	}, "layouts/base")
 }

@@ -8,8 +8,8 @@
   <header>Pending work</header>
   <div style="display:flex;gap:32px;margin-bottom:16px;flex-wrap:wrap;">
     <div>
-      <div style="font-size:2rem;font-weight:700;line-height:1;">{{.UncachedIPs}}</div>
-      <div style="font-size:0.85rem;color:var(--pico-muted-color);">IP(s) without geo / WHOIS data</div>
+      <div style="font-size:2rem;font-weight:700;line-height:1;">{{.StaleIPs}}</div>
+      <div style="font-size:0.85rem;color:var(--pico-muted-color);">IP(s) with missing or stale geo / WHOIS data</div>
     </div>
     <div>
       <div style="font-size:2rem;font-weight:700;line-height:1;">{{.StaleDomains}}</div>
@@ -20,10 +20,21 @@
       <div style="font-size:0.85rem;color:var(--pico-muted-color);">total domain(s) tracked</div>
     </div>
   </div>
-  {{if and (eq .UncachedIPs 0) (eq .StaleDomains 0)}}
+  {{if and (eq .StaleIPs 0) (eq .StaleDomains 0) (not .EnrichRunning)}}
   <p style="color:var(--pico-ins-color,#1a7f37);">&#10003; Everything is up to date. Click below to force a refresh.</p>
   {{end}}
-  <button id="start-btn">Start Enrichment</button>
+  <form method="POST" action="/enrich/start" style="margin:0">
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    <button id="start-btn" type="submit" {{if .EnrichRunning}}disabled{{end}}>
+      {{if .EnrichRunning}}Running&hellip;{{else}}Start Enrichment{{end}}
+    </button>
+  </form>
+  {{if .EnrichRunning}}
+  <p style="font-size:0.85rem;color:var(--pico-muted-color);margin-top:8px;">
+    Running in the background — this keeps going even if you navigate away or close this tab.
+    Progress below updates live; come back to this page any time to check on it.
+  </p>
+  {{end}}
 </article>
 
 <br/>
@@ -42,7 +53,13 @@
 
 <br/>
 
-<div id="progress-section" style="display:none;">
+<div id="progress-section"
+     style="display:{{if .EnrichRunning}}block{{else}}none{{end}};"
+     data-running="{{if .EnrichRunning}}true{{else}}false{{end}}"
+     data-ip-done="{{.EnrichIPDone}}"
+     data-ip-total="{{.EnrichIPTotal}}"
+     data-domain-done="{{.EnrichDomainDone}}"
+     data-domain-total="{{.EnrichDomainTotal}}">
   <article>
     <header>
       <span id="progress-title">Running&hellip;</span>

@@ -1,6 +1,12 @@
 <h1>Reports</h1>
 
-<form method="GET" action="/reports" class="filter-form">
+<div role="group" style="margin-bottom:1rem;max-width:280px;">
+  <a href="/reports/dmarc"  role="button" aria-current="page">DMARC</a>
+  <a href="/reports/tlsrpt" role="button" class="outline secondary">TLS-RPT</a>
+</div>
+<hr style="margin-top:1.5rem;margin-bottom:1.5rem;">
+
+<form method="GET" action="/reports/dmarc" class="filter-form">
     <div class="grid">
         <label>
             Domain

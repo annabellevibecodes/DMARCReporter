@@ -5,10 +5,10 @@
         {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
     </select>
     <span style="font-size:0.85rem;color:var(--pico-muted-color);">Export:</span>
-    <a href="/export?format=csv&domain={{.Domain}}"  role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">CSV</a>
-    <a href="/export?format=xlsx&domain={{.Domain}}" role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">XLSX</a>
-    <a href="/export?format=pdf&domain={{.Domain}}"  role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">PDF</a>
-    <a href="/export?format=docx&domain={{.Domain}}" role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">DOCX</a>
+    <a href="/export?format=csv&domain={{.Domain}}&period={{.SelectedPeriod}}"  role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">CSV</a>
+    <a href="/export?format=xlsx&domain={{.Domain}}&period={{.SelectedPeriod}}" role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">XLSX</a>
+    <a href="/export?format=pdf&domain={{.Domain}}&period={{.SelectedPeriod}}"  role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">PDF</a>
+    <a href="/export?format=docx&domain={{.Domain}}&period={{.SelectedPeriod}}" role="button" class="outline secondary" style="padding:3px 12px;font-size:0.85rem;">DOCX</a>
 </form>
 
 <div class="kpi-grid">

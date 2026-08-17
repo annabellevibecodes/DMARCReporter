@@ -18,6 +18,9 @@ import (
 	"github.com/annabellevibecodes/dmarcreporter/internal/config"
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
 	"github.com/annabellevibecodes/dmarcreporter/internal/handlers"
+	"github.com/annabellevibecodes/dmarcreporter/internal/ingest"
+	"github.com/annabellevibecodes/dmarcreporter/internal/mailauth"
+	"github.com/annabellevibecodes/dmarcreporter/internal/secrets"
 )
 
 func main() {
@@ -45,6 +48,18 @@ func main() {
 		log.Fatalf("open database: %v", err)
 	}
 	defer db.Close()
+
+	// Secrets box for account credentials at rest (SECRETS_KEY or key file).
+	box, err := secrets.Open(cfg.SecretsKey, cfg.DBPath+".key")
+	if err != nil {
+		log.Fatalf("open secrets store: %v", err)
+	}
+
+	worker := ingest.NewWorker(db, cfg, box, mailauth.NewManager())
+	if err := worker.SyncEnvAccount(); err != nil {
+		log.Printf("WARNING: could not sync IMAP_* environment account: %v", err)
+	}
+	worker.StartScheduler(cfg.FetchInterval)
 
 	engine := html.New("./views", ".html")
 	engine.AddFunc("add", func(a, b int) int { return a + b })
@@ -126,11 +141,20 @@ func main() {
 
 	app.Static("/static", "./static")
 
-	a := &handlers.App{DB: db, Cfg: cfg}
+	a := &handlers.App{DB: db, Cfg: cfg, Worker: worker, EnrichWorker: handlers.NewEnrichWorker(db)}
+	// Keep DMARC/BIMI/MTA-STS DNS checks fresh without blocking page loads.
+	a.StartDomainCheckRefresher(6 * time.Hour)
 
 	app.Get("/theme", a.HandleSetTheme)
 	app.Get("/", a.HandleDashboard)
-	app.Get("/reports", a.HandleReportsList)
+	// /reports/dmarc and /reports/tlsrpt are literal 2-segment paths at the
+	// same depth as /reports/:id, so they must be registered before it —
+	// Fiber v2 matches routes in registration order, not by static-over-param
+	// priority, so a param route registered first would shadow them.
+	app.Get("/reports", a.HandleReportsRedirect)
+	app.Get("/reports/dmarc", a.HandleReportsList)
+	app.Get("/reports/tlsrpt", a.HandleReportsTLSRPTList)
+	app.Get("/reports/tlsrpt/:id/json", a.HandleTLSRPTReportJSON)
 	app.Get("/reports/:id", a.HandleReportDetail)
 	app.Get("/reports/:id/xml", a.HandleReportXML)
 	app.Get("/upload", a.HandleUploadForm)
@@ -150,9 +174,27 @@ func main() {
 		})}, fetchHandlers...)
 	}
 	app.Post("/fetch", fetchHandlers...)
+
+	// Mail account management.
+	accountLimiter := limiter.New(limiter.Config{Max: 30, Expiration: 5 * time.Minute})
+	app.Get("/accounts", a.HandleAccountsPage)
+	app.Post("/accounts", accountLimiter, a.HandleAccountCreate)
+	app.Post("/accounts/:id/delete", accountLimiter, a.HandleAccountDelete)
+	app.Post("/accounts/:id/toggle", accountLimiter, a.HandleAccountToggle)
+	app.Post("/accounts/:id/test", accountLimiter, a.HandleAccountTest)
+	app.Post("/accounts/:id/google-connect", accountLimiter, a.HandleGoogleConnect)
+	app.Get("/oauth/google/callback", accountLimiter, a.HandleGoogleCallback)
+
+	app.Get("/tlsrpt", a.HandleTLSRPTList)
 	app.Get("/enrich", a.HandleEnrichPage)
+	// /enrich/start triggers the background run; it is rate-limited since it
+	// mutates state. /enrich/stream only observes the run (any number of tabs
+	// may attach), so it gets a looser limit purely against reconnect storms.
+	app.Post("/enrich/start", limiter.New(limiter.Config{
+		Max: 5, Expiration: 5 * time.Minute,
+	}), a.HandleEnrichStart)
 	app.Get("/enrich/stream", limiter.New(limiter.Config{
-		Max: 3, Expiration: 5 * time.Minute,
+		Max: 30, Expiration: 5 * time.Minute,
 	}), a.HandleEnrichStream)
 	app.Post("/enrich/clear", limiter.New(limiter.Config{
 		Max: 5, Expiration: 5 * time.Minute,

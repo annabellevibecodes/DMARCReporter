@@ -16,6 +16,7 @@ var domainReExport = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z
 func (a *App) HandleExport(c *fiber.Ctx) error {
 	format := c.Query("format")
 	domain := c.Query("domain")
+	period := c.Query("period", "all")
 
 	if domain != "" && (len(domain) > 253 || !domainReExport.MatchString(domain)) {
 		return fiber.ErrBadRequest
@@ -26,7 +27,8 @@ func (a *App) HandleExport(c *fiber.Ctx) error {
 		return fiber.ErrBadRequest
 	}
 
-	rd, err := export.Fetch(a.DB, domain)
+	from, to, periodLabel := parsePeriod(period)
+	rd, err := export.Fetch(a.DB, domain, from, to, periodLabel)
 	if err != nil {
 		return err
 	}
@@ -36,7 +38,7 @@ func (a *App) HandleExport(c *fiber.Ctx) error {
 		scope = domain
 	}
 	date := time.Now().UTC().Format("2006-01-02")
-	filename := fmt.Sprintf("dmarc-report-%s-%s.%s", scope, date, format)
+	filename := fmt.Sprintf("dmarc-report-%s-%s-%s.%s", scope, period, date, format)
 	c.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 
 	switch format {

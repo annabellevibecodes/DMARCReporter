@@ -59,6 +59,9 @@ func WritePDF(w io.Writer, rd *ReportData) error {
 	}
 	pdf.CellFormat(pdfBodyW/2, 6, "Scope: "+scope, "", 0, "L", false, 0, "")
 	pdf.CellFormat(pdfBodyW/2, 6, "Generated: "+rd.GeneratedAt.Format("2006-01-02 15:04 UTC"), "", 1, "R", false, 0, "")
+	if rd.PeriodLabel != "" {
+		pdf.CellFormat(pdfBodyW, 6, "Reporting period: "+rd.PeriodLabel, "", 1, "L", false, 0, "")
+	}
 	pdf.Ln(4)
 
 	// Summary KPIs

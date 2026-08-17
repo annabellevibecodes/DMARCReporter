@@ -295,7 +295,7 @@ func (a *App) HandleDomainsList(c *fiber.Ctx) error {
 		"PeriodLabel":   periodLabel,
 		"SortBy":        sortBy,
 		"SortDir":       sortDir,
-		"IMAPEnabled":   a.Cfg.IMAPHost != "",
+		"IMAPEnabled":   a.FetchEnabled(),
 		"CSRFToken":     c.Locals("csrf"),
 	}, "layouts/base")
 }
@@ -319,10 +319,12 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 		return err
 	}
 
-	trend, err := database.GetDomainTrend(a.DB, domain, from)
+	trendDaily := database.TrendDaily(from)
+	trend, err := database.GetDomainTrend(a.DB, domain, from, trendDaily)
 	if err != nil {
 		return err
 	}
+	trend = database.FillTrendGaps(trend, from, 0, trendDaily)
 
 	type trendPayload struct {
 		Labels []string `json:"labels"`
@@ -402,7 +404,7 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 		"PeriodOptions":       periodOptions,
 		"SelectedPeriod":      period,
 		"PeriodLabel":         periodLabel,
-		"IMAPEnabled":         a.Cfg.IMAPHost != "",
+		"IMAPEnabled":         a.FetchEnabled(),
 		"CSRFToken":           c.Locals("csrf"),
 	}, "layouts/base")
 }

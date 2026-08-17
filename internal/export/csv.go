@@ -22,6 +22,9 @@ func WriteCSV(w io.Writer, rd *ReportData) error {
 	}
 	write(title)
 	write("Generated", rd.GeneratedAt.Format(time.RFC3339))
+	if rd.PeriodLabel != "" {
+		write("Period", rd.PeriodLabel)
+	}
 	blank()
 
 	// Summary
@@ -40,7 +43,7 @@ func WriteCSV(w io.Writer, rd *ReportData) error {
 	write("Domain", "Reports", "Messages", "Passed", "Failed", "Pass Rate")
 	for _, d := range rd.Domains {
 		write(
-			d.Domain,
+			escapeFormula(d.Domain),
 			fmt.Sprintf("%d", d.ReportCount),
 			fmt.Sprintf("%d", d.TotalMessages),
 			fmt.Sprintf("%d", d.Passed),
@@ -52,17 +55,17 @@ func WriteCSV(w io.Writer, rd *ReportData) error {
 
 	// Per-domain records
 	if rd.Domain != "" && len(rd.Records) > 0 {
-		write("Recent Records (last 100)")
+		write(fmt.Sprintf("Recent Records (last %d)", rd.RecordLimit))
 		write("Source IP", "Count", "Disposition", "DKIM", "SPF", "Envelope To", "Reporter", "Period Begin", "Period End")
 		for _, r := range rd.Records {
 			write(
-				r.SourceIP,
+				escapeFormula(r.SourceIP),
 				fmt.Sprintf("%d", r.Count),
-				r.Disposition,
-				r.EvalDKIM,
-				r.EvalSPF,
-				r.EnvelopeTo,
-				r.OrgName,
+				escapeFormula(r.Disposition),
+				escapeFormula(r.EvalDKIM),
+				escapeFormula(r.EvalSPF),
+				escapeFormula(r.EnvelopeTo),
+				escapeFormula(r.OrgName),
 				time.Unix(r.DateRangeBegin, 0).UTC().Format("2006-01-02"),
 				time.Unix(r.DateRangeEnd, 0).UTC().Format("2006-01-02"),
 			)
@@ -76,7 +79,7 @@ func WriteCSV(w io.Writer, rd *ReportData) error {
 		write("Source IP", "Messages", "Failed", "Fail Rate")
 		for _, s := range rd.TopSources {
 			write(
-				s.SourceIP,
+				escapeFormula(s.SourceIP),
 				fmt.Sprintf("%d", s.TotalMessages),
 				fmt.Sprintf("%d", s.Failed),
 				fmt.Sprintf("%.1f%%", s.FailRate*100),

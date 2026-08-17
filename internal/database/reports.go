@@ -415,10 +415,9 @@ func ListSources(db *sqlx.DB, page, pageSize int, envelopeFrom, disposition, cou
 		args = append(args, sourceIP)
 	}
 
-	// Country filter requires a LEFT JOIN on ip_info.
-	ipJoin := ""
+	// ip_info supplies reverse DNS for provider labels and the country filter.
+	ipJoin := " LEFT JOIN ip_info ii ON ii.ip = rr.source_ip"
 	if country != "" {
-		ipJoin = " LEFT JOIN ip_info ii ON ii.ip = rr.source_ip"
 		if country == "??" {
 			clauses = append(clauses, "(ii.whois_country IS NULL OR ii.whois_country = '')")
 		} else {
@@ -480,7 +479,8 @@ func ListSources(db *sqlx.DB, page, pageSize int, envelopeFrom, disposition, cou
 			SUM(rr.count) AS total_messages,
 			SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END) AS passed,
 			SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END) AS failed,
-			0.0 AS pass_rate
+			0.0 AS pass_rate,
+			COALESCE(MAX(ii.rdns), '') AS rdns
 		FROM record_rows rr`+joinClause+where+`
 		GROUP BY rr.source_ip
 		`+having+`

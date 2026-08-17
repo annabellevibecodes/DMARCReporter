@@ -45,6 +45,9 @@ func buildDocxBody(rd *ReportData, title string) string {
 	// Title
 	sb.WriteString(docxHeading1(title))
 	sb.WriteString(docxPara("Generated: " + rd.GeneratedAt.Format("2006-01-02 15:04:05 UTC")))
+	if rd.PeriodLabel != "" {
+		sb.WriteString(docxPara("Reporting period: " + rd.PeriodLabel))
+	}
 	sb.WriteString(docxPara(""))
 
 	// Summary

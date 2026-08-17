@@ -108,3 +108,61 @@ CREATE TABLE IF NOT EXISTS ip_info (
     whois_abuse   TEXT    NOT NULL DEFAULT '',
     looked_up_at  INTEGER NOT NULL DEFAULT 0
 );
+
+-- Mail accounts to fetch DMARC reports from. Secrets (passwords, OAuth client
+-- secrets, refresh tokens) are stored AES-GCM-encrypted in secret_enc.
+CREATE TABLE IF NOT EXISTS accounts (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                TEXT    NOT NULL UNIQUE,
+    provider            TEXT    NOT NULL DEFAULT 'imap',      -- imap | gmail | o365
+    host                TEXT    NOT NULL DEFAULT '',
+    port                TEXT    NOT NULL DEFAULT '993',
+    username            TEXT    NOT NULL DEFAULT '',
+    auth_type           TEXT    NOT NULL DEFAULT 'password',  -- password | oauth-refresh | oauth-client
+    secret_enc          TEXT    NOT NULL DEFAULT '',
+    mailbox             TEXT    NOT NULL DEFAULT 'INBOX',
+    processed_mailbox   TEXT    NOT NULL DEFAULT '',          -- empty = auto (INBOX<delim>Processed)
+    tls                 INTEGER NOT NULL DEFAULT 1,
+    enabled             INTEGER NOT NULL DEFAULT 1,
+    created_at          INTEGER NOT NULL DEFAULT (unixepoch()),
+    last_fetch_at       INTEGER NOT NULL DEFAULT 0,
+    last_fetch_status   TEXT    NOT NULL DEFAULT '',          -- '', 'ok', 'error', 'running'
+    last_fetch_detail   TEXT    NOT NULL DEFAULT '',
+    last_fetch_imported INTEGER NOT NULL DEFAULT 0
+);
+
+-- UIDs already examined (and found to carry no report attachments), so
+-- subsequent fetches skip them without re-downloading. Scoped by UIDVALIDITY;
+-- rows for a stale UIDVALIDITY are purged on the next fetch.
+CREATE TABLE IF NOT EXISTS imap_seen (
+    account_id  INTEGER NOT NULL,
+    uidvalidity INTEGER NOT NULL,
+    uid         INTEGER NOT NULL,
+    seen_at     INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (account_id, uidvalidity, uid)
+);
+
+-- SMTP TLS reports (RFC 8460), delivered as JSON alongside DMARC reports.
+CREATE TABLE IF NOT EXISTS tlsrpt_reports (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_name         TEXT    NOT NULL,
+    report_id        TEXT    NOT NULL,
+    contact_info     TEXT    NOT NULL DEFAULT '',
+    date_range_begin INTEGER NOT NULL,
+    date_range_end   INTEGER NOT NULL,
+    policy_domains   TEXT    NOT NULL DEFAULT '', -- comma-separated
+    total_success    INTEGER NOT NULL DEFAULT 0,
+    total_failure    INTEGER NOT NULL DEFAULT 0,
+    raw_json         TEXT    NOT NULL DEFAULT '',
+    imported_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+    source_filename  TEXT    NOT NULL DEFAULT '',
+    UNIQUE (org_name, report_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tlsrpt_date_begin ON tlsrpt_reports(date_range_begin);
+
+-- Alert deduplication: one row per alert already delivered.
+CREATE TABLE IF NOT EXISTS alerts_sent (
+    key     TEXT    PRIMARY KEY,
+    sent_at INTEGER NOT NULL DEFAULT (unixepoch())
+);

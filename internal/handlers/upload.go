@@ -22,7 +22,7 @@ func (a *App) HandleUploadForm(c *fiber.Ctx) error {
 		"Title":       "Upload — DMARC Reporter",
 		"Theme":       getTheme(c),
 		"ActivePage":  "upload",
-		"IMAPEnabled": a.Cfg.IMAPHost != "",
+		"IMAPEnabled": a.FetchEnabled(),
 		"FlashKind":   flashKind,
 		"FlashMsg":    flashMsg,
 		"CSRFToken":   c.Locals("csrf"),
@@ -56,6 +56,28 @@ func (a *App) HandleUploadSubmit(c *fiber.Ctx) error {
 			return err
 		}
 		defer f.Close()
+
+		// TLS-RPT (RFC 8460) JSON reports have their own parse/store path.
+		if parser.IsTLSRPTFile(fh.Filename) {
+			report, rawJSON, parseErr := parser.ParseTLSRPT(fh.Filename, f)
+			if parseErr != nil {
+				log.Printf("upload parse error for %q: %v", fh.Filename, parseErr)
+				audit.ReportParseFailed(fh.Filename)
+				a.setFlash(c, "error", "File could not be parsed as an SMTP TLS report.")
+				return c.Redirect("/upload")
+			}
+			if _, err := database.SaveTLSRPT(a.DB, report, fh.Filename, rawJSON); err != nil {
+				if errors.Is(err, database.ErrDuplicate) {
+					audit.ReportDuplicate(fh.Filename, report.OrganizationName, report.ReportID)
+					duplicates++
+					continue
+				}
+				return err
+			}
+			audit.ReportImported(fh.Filename, report.OrganizationName, "(tlsrpt)", report.ReportID, len(report.Policies))
+			imported++
+			continue
+		}
 
 		var feedbacks []*models.Feedback
 		var filenames []string
@@ -108,7 +130,7 @@ func (a *App) HandleUploadSubmit(c *fiber.Ctx) error {
 	case imported == 0 && duplicates > 0:
 		a.setFlash(c, "warning", fmt.Sprintf("%d report(s) already imported — no new data.", duplicates))
 		return c.Redirect("/reports")
-	case imported == 1:
+	case imported == 1 && lastID != 0:
 		return c.Redirect(fmt.Sprintf("/reports/%d", lastID))
 	default:
 		a.setFlash(c, "success", fmt.Sprintf("Imported %d report(s).", imported))

@@ -40,6 +40,7 @@
             {{if .Disposition}}{{$base = printf "%s&disposition=%s" $base .Disposition}}{{end}}
             {{if .Country}}{{$base = printf "%s&country=%s" $base .Country}}{{end}}
             <th><a href="{{$base}}&sort=ip&dir={{if and (eq $.SortBy "ip") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Source IP{{if eq $.SortBy "ip"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
+            <th>Provider</th>
             <th><a href="{{$base}}&sort=messages&dir={{if and (eq $.SortBy "messages") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Total Messages{{if eq $.SortBy "messages"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
             <th><a href="{{$base}}&sort=passed&dir={{if and (eq $.SortBy "passed") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Passed{{if eq $.SortBy "passed"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
             <th><a href="{{$base}}&sort=failed&dir={{if and (eq $.SortBy "failed") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Failed{{if eq $.SortBy "failed"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
@@ -50,6 +51,7 @@
     {{range .Sources}}
         <tr class="{{if ge .FailRatePct 10.0}}row-fail{{else if gt .FailRatePct 0.0}}row-warn{{end}}">
             <td><a href="/sources/{{.SourceIP}}">{{.SourceIP}}</a></td>
+            <td>{{if .Provider}}{{.Provider}}{{else}}<small>—</small>{{end}}</td>
             <td>{{.TotalMessages}}</td>
             <td>{{.Passed}}</td>
             <td>{{.Failed}}</td>

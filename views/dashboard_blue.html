@@ -7,9 +7,11 @@
       <span>Vol. III &middot; No. ix</span>
       <nav style="display:flex;gap:20px;align-items:center;">
         <a href="/"         style="color:#0e2a4a;text-decoration:none;font-style:normal;font-weight:600;">Dashboard</a>
-        <a href="/reports"  style="color:#6b5e3c;text-decoration:none;font-style:italic;">Reports</a>
+        <a href="/reports/dmarc"  style="color:#6b5e3c;text-decoration:none;font-style:italic;">Reports</a>
         <a href="/domains"  style="color:#6b5e3c;text-decoration:none;font-style:italic;">Domains</a>
         <a href="/sources"  style="color:#6b5e3c;text-decoration:none;font-style:italic;">Senders</a>
+        <a href="/tlsrpt"   style="color:#6b5e3c;text-decoration:none;font-style:italic;">TLS</a>
+        <a href="/accounts" style="color:#6b5e3c;text-decoration:none;font-style:italic;">Accounts</a>
         <a href="/help"     style="color:#6b5e3c;text-decoration:none;font-style:italic;">Help</a>
         <a href="/upload"   style="color:#0e2a4a;text-decoration:none;font-style:normal;font-weight:600;">Upload &#8599;</a>
         {{if .IMAPEnabled}}
@@ -152,7 +154,7 @@
           <tbody>
           {{range .TopFailingSources}}
             <tr style="border-bottom:1px dotted #d8cfb7;">
-              <td style="padding:5px 10px;"><a href="/sources/{{.SourceIP}}" style="color:#0e2a4a;text-decoration:none;">{{.SourceIP}}</a></td>
+              <td style="padding:5px 10px;"><a href="/sources/{{.SourceIP}}" style="color:#0e2a4a;text-decoration:none;">{{.SourceIP}}</a>{{if .Provider}}<div style="font-size:10px;color:#6b5e3c;font-style:italic;">{{.Provider}}</div>{{end}}</td>
               <td style="padding:5px 10px;text-align:right;font-variant-numeric:tabular-nums;">{{commaN .TotalMessages}}</td>
               <td style="padding:5px 10px;text-align:right;font-variant-numeric:tabular-nums;color:{{if ge .FailRate 0.01}}#6b1f24{{else}}#1a1a1a{{end}};">{{commaN .Failed}}</td>
               <td style="padding:5px 10px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:{{if ge .FailRate 0.5}}#6b1f24{{else if ge .FailRate 0.01}}#b08d3e{{else}}#0e2a4a{{end}};">
@@ -187,7 +189,7 @@
           <tbody>
           {{range .TopByVolume}}
             <tr style="border-bottom:1px dotted #d8cfb7;">
-              <td style="padding:5px 10px;"><a href="/sources/{{.SourceIP}}" style="color:#0e2a4a;text-decoration:none;">{{.SourceIP}}</a></td>
+              <td style="padding:5px 10px;"><a href="/sources/{{.SourceIP}}" style="color:#0e2a4a;text-decoration:none;">{{.SourceIP}}</a>{{if .Provider}}<div style="font-size:10px;color:#6b5e3c;font-style:italic;">{{.Provider}}</div>{{end}}</td>
               <td style="padding:5px 10px;text-align:right;font-variant-numeric:tabular-nums;">{{commaN .TotalMessages}}</td>
               <td style="padding:5px 10px;text-align:right;font-variant-numeric:tabular-nums;">{{printf "%.1f%%" .PassRate}}</td>
             </tr>
@@ -294,6 +296,30 @@
         {{end}}
       </div>
 
+      <!-- § VIIIb Policy Overrides -->
+      <div>
+        <div style="display:grid;grid-template-columns:54px 1fr;align-items:baseline;column-gap:10px;margin-bottom:6px;">
+          <span style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:13px;color:#b08d3e;letter-spacing:.16em;text-transform:uppercase;">&sect;&nbsp;VIIIb</span>
+          <div>
+            <span style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:20px;color:#0e2a4a;line-height:1.1;">Clemency Granted</span>
+            <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:12px;color:#6b5e3c;margin-top:2px;">Reasons for which receivers declined to enforce the published policy.</div>
+          </div>
+        </div>
+        {{if .PolicyOverrides}}
+        <div style="border-top:1px solid #0e2a4a;border-bottom:1px solid #0e2a4a;">
+          {{range .PolicyOverrides}}
+          <div style="display:flex;align-items:baseline;gap:8px;padding:6px 4px;border-bottom:1px dotted #d8cfb7;">
+            <span style="flex:1;font-family:'Source Serif 4',serif;font-size:13px;color:#0e2a4a;">{{.Type}}</span>
+            <span style="font-family:'Source Serif 4',serif;font-style:italic;font-size:11px;color:#6b5e3c;">{{.SourceCount}} sources</span>
+            <span style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:20px;color:#0e2a4a;font-variant-numeric:tabular-nums;">{{commaN .TotalMessages}}</span>
+          </div>
+          {{end}}
+        </div>
+        {{else}}
+        <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:13px;color:#6b5e3c;padding:8px 0;">No overrides were reported; the policy was enforced as written.</div>
+        {{end}}
+      </div>
+
       <!-- § IX Policy Distribution -->
       <div style="border:1px solid #0e2a4a;padding:10px 14px;background:#fbf6ec;">
         <div style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:16px;color:#0e2a4a;margin-bottom:6px;">DMARC Policy Distribution</div>
@@ -323,7 +349,7 @@
         <div style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:12px;color:#6b5e3c;letter-spacing:.08em;">Reports lately received from</div>
         {{if .RecentReports}}
         <div style="display:flex;flex-wrap:wrap;column-gap:12px;margin-top:6px;font-family:'Source Serif 4',serif;font-size:12px;color:#1a1a1a;">
-          {{range .RecentReports}}<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;border-bottom:1px dotted #d8cfb7;gap:12px;"><a href="/reports" style="color:#0e2a4a;text-decoration:none;">{{.OrgName}}</a><a href="/domains/{{.Domain}}" style="color:#6b5e3c;font-style:italic;text-decoration:none;white-space:nowrap;">{{.Domain}}</a></div>{{end}}
+          {{range .RecentReports}}<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;border-bottom:1px dotted #d8cfb7;gap:12px;"><a href="/reports/dmarc" style="color:#0e2a4a;text-decoration:none;">{{.OrgName}}</a><a href="/domains/{{.Domain}}" style="color:#6b5e3c;font-style:italic;text-decoration:none;white-space:nowrap;">{{.Domain}}</a></div>{{end}}
         </div>
         {{else}}
         <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:12px;color:#6b5e3c;margin-top:6px;">No reports have yet been received.</div>

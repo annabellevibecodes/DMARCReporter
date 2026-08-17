@@ -50,14 +50,15 @@ func ClearDNSCache(db *sqlx.DB) error {
 	return err
 }
 
-// ListUncachedSourceIPs returns distinct source IPs from record_rows that have
-// never been looked up in ip_info (looked_up_at = 0 or missing).
-func ListUncachedSourceIPs(db *sqlx.DB) ([]string, error) {
+// ListStaleSourceIPs returns distinct source IPs from record_rows whose
+// ip_info cache is missing, never looked up, or older than cutoff (a Unix
+// timestamp) — i.e. everything a bulk enrichment run should refresh.
+func ListStaleSourceIPs(db *sqlx.DB, cutoff int64) ([]string, error) {
 	var ips []string
 	err := db.Select(&ips, `
 		SELECT DISTINCT rr.source_ip
 		FROM record_rows rr
 		LEFT JOIN ip_info ii ON ii.ip = rr.source_ip
-		WHERE ii.ip IS NULL OR ii.looked_up_at = 0`)
+		WHERE ii.ip IS NULL OR ii.looked_up_at = 0 OR ii.looked_up_at < ?`, cutoff)
 	return ips, err
 }

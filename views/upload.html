@@ -1,11 +1,11 @@
-<h1>Upload DMARC Report</h1>
-<p>Supported formats: <code>.xml</code>, <code>.xml.gz</code>, <code>.gz</code>, <code>.zip</code></p>
+<h1>Upload Report</h1>
+<p>Supported formats: DMARC aggregate <code>.xml</code>, <code>.xml.gz</code>, <code>.gz</code>, <code>.zip</code>, raw email <code>.eml</code>, and SMTP TLS reports (RFC 8460) <code>.json</code>, <code>.json.gz</code></p>
 
 <form method="POST" action="/upload" enctype="multipart/form-data">
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
     <label>
         Report file(s)
-        <input type="file" name="report" accept=".xml,.gz,.zip" multiple required>
+        <input type="file" name="report" accept=".xml,.gz,.zip,.eml,.json" multiple required>
     </label>
     <button type="submit">Upload</button>
 </form>

@@ -1,0 +1,52 @@
+<h1>SMTP TLS Reports</h1>
+<p>Reports (RFC 8460) from receivers about the TLS security of connections to your mail servers. Failures here mean senders could not establish (or validate) an encrypted connection — check your MTA-STS policy and certificates.</p>
+
+<form method="GET" action="/tlsrpt" style="margin-bottom:1rem;">
+  <select name="period" data-autosubmit style="width:auto;display:inline-block;">
+    {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
+  </select>
+</form>
+
+<div class="grid">
+  <article>
+    <header>Reports</header>
+    <strong style="font-size:1.6rem">{{commaN .Summary.ReportCount}}</strong>
+  </article>
+  <article>
+    <header>Successful sessions</header>
+    <strong style="font-size:1.6rem">{{commaN .Summary.TotalSuccess}}</strong>
+  </article>
+  <article>
+    <header>Failed sessions</header>
+    <strong style="font-size:1.6rem">{{commaN .Summary.TotalFailure}}</strong>
+  </article>
+</div>
+
+{{if .Reports}}
+<figure>
+<table>
+  <thead>
+    <tr>
+      <th>Reporter</th>
+      <th>Domains</th>
+      <th>Period</th>
+      <th style="text-align:right">OK</th>
+      <th style="text-align:right">Failed</th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Reports}}
+    <tr>
+      <td>{{.OrgName}}</td>
+      <td>{{range splitComma .PolicyDomains}}<span>{{.}}</span> {{end}}</td>
+      <td>{{unixTime .DateRangeBegin}} — {{unixTime .DateRangeEnd}}</td>
+      <td style="text-align:right">{{commaN .TotalSuccess}}</td>
+      <td style="text-align:right">{{if gt .TotalFailure 0}}<strong>{{commaN .TotalFailure}}</strong>{{else}}0{{end}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+</figure>
+{{else}}
+<p><em>No TLS reports for this period. They arrive in the same mailbox as DMARC reports once you publish a <code>_smtp._tls</code> TXT record (TLSRPT).</em></p>
+{{end}}

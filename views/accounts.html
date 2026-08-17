@@ -1,0 +1,141 @@
+<h1>Mail Accounts</h1>
+<p>Mailboxes that DMARC (and TLS-RPT) reports are fetched from. Fetching runs in the background — trigger it with the Fetch button in the navigation bar{{if .FetchRunning}} <mark>(a fetch is running right now)</mark>{{end}}.</p>
+
+{{if .LastError}}
+<div class="flash flash-error">Last fetch run reported an error: {{.LastError}}</div>
+{{end}}
+
+{{if .Accounts}}
+<figure>
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Provider</th>
+      <th>User / Host</th>
+      <th>Auth</th>
+      <th>Mailbox</th>
+      <th>Last fetch</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Accounts}}
+    <tr{{if eq .Enabled 0}} style="opacity:.5"{{end}}>
+      <td>{{.Name}}{{if eq .Name $.EnvAccount}} <small>(from environment)</small>{{end}}</td>
+      <td>{{.Provider}}</td>
+      <td>{{.Username}}<br><small>{{.Host}}:{{.Port}}{{if eq .TLS 0}} <mark>no TLS</mark>{{end}}</small></td>
+      <td>{{if eq .AuthType "password"}}password{{else if eq .AuthType "oauth-refresh"}}OAuth (user){{else}}OAuth (app){{end}}</td>
+      <td>{{.Mailbox}}</td>
+      <td>{{if .LastFetchAt}}{{unixTime .LastFetchAt}}<br><small>{{.LastFetchImported}} imported</small>{{else}}never{{end}}</td>
+      <td>
+        {{if eq .LastFetchStatus "ok"}}<ins>ok</ins>
+        {{else if eq .LastFetchStatus "error"}}<del title="{{.LastFetchDetail}}">error</del>
+        {{else if eq .LastFetchStatus "running"}}running…
+        {{else}}—{{end}}
+        {{if eq .Enabled 0}}<br><small>disabled</small>{{end}}
+      </td>
+      <td style="white-space:nowrap">
+        <form method="POST" action="/accounts/{{.ID}}/test" style="display:inline">
+          <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+          <button type="submit" class="outline secondary" style="padding:2px 10px;font-size:.8rem">Test</button>
+        </form>
+        {{if eq .AuthType "oauth-refresh"}}
+        <form method="POST" action="/accounts/{{.ID}}/google-connect" style="display:inline">
+          <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+          <button type="submit" class="outline secondary" style="padding:2px 10px;font-size:.8rem">Connect&nbsp;Google</button>
+        </form>
+        {{end}}
+        <form method="POST" action="/accounts/{{.ID}}/toggle" style="display:inline">
+          <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+          <button type="submit" class="outline secondary" style="padding:2px 10px;font-size:.8rem">{{if eq .Enabled 0}}Enable{{else}}Disable{{end}}</button>
+        </form>
+        <form method="POST" action="/accounts/{{.ID}}/delete" style="display:inline">
+          <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+          <button type="submit" class="outline" style="padding:2px 10px;font-size:.8rem">Delete</button>
+        </form>
+      </td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+</figure>
+{{else}}
+<p><em>No accounts yet — add one below, or set the <code>IMAP_*</code> environment variables.</em></p>
+{{end}}
+
+<h2>Add account</h2>
+<form method="POST" action="/accounts">
+  <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+  <div class="grid">
+    <label>Display name
+      <input type="text" name="name" placeholder="dmarc@example.com (Gmail)" required>
+    </label>
+    <label>Provider
+      <select name="provider">
+        <option value="imap">Generic IMAP</option>
+        <option value="gmail">Gmail / Google Workspace</option>
+        <option value="o365">Office 365 / Exchange Online</option>
+      </select>
+    </label>
+  </div>
+  <div class="grid">
+    <label>Username / email
+      <input type="text" name="username" placeholder="dmarc@example.com" required>
+    </label>
+    <label>Mailbox
+      <input type="text" name="mailbox" value="INBOX">
+    </label>
+    <label>Processed mailbox <small>(blank = auto)</small>
+      <input type="text" name="processed_mailbox" placeholder="auto: INBOX/Processed">
+    </label>
+  </div>
+
+  <details>
+    <summary>Generic IMAP settings (host, port, TLS, password)</summary>
+    <div class="grid">
+      <label>Host <small>(ignored for Gmail/O365 presets)</small>
+        <input type="text" name="host" placeholder="mail.example.com">
+      </label>
+      <label>Port
+        <input type="text" name="port" placeholder="993">
+      </label>
+      <label>TLS
+        <select name="tls">
+          <option value="on">TLS (recommended)</option>
+          <option value="off">No TLS (testing only)</option>
+        </select>
+      </label>
+    </div>
+    <label>Password <small>(IMAP password, or a Gmail app password — leave blank for Gmail OAuth)</small>
+      <input type="password" name="password" autocomplete="new-password">
+    </label>
+  </details>
+
+  <details>
+    <summary>OAuth settings (Gmail OAuth &amp; Office 365)</summary>
+    <p><small>
+      <strong>Gmail:</strong> create an OAuth client (type “Web application”) in Google Cloud Console with redirect URI
+      <code>{{"{"}}BASE_URL{{"}"}}/oauth/google/callback</code>, then enter its client ID and secret here; you will be sent
+      through Google's consent screen after saving.<br>
+      <strong>Office 365:</strong> Microsoft has disabled password auth for IMAP. Register an Entra ID app with the
+      <code>IMAP.AccessAsApp</code> application permission (admin consent required), grant the service principal access to the
+      mailbox via <code>New-ServicePrincipal</code> + <code>Add-MailboxPermission</code>, then enter tenant ID, client ID, and
+      client secret.
+    </small></p>
+    <div class="grid">
+      <label>Tenant ID <small>(O365 only)</small>
+        <input type="text" name="tenant" placeholder="00000000-0000-0000-0000-000000000000">
+      </label>
+      <label>Client ID
+        <input type="text" name="client_id">
+      </label>
+      <label>Client secret
+        <input type="password" name="client_secret" autocomplete="new-password">
+      </label>
+    </div>
+  </details>
+
+  <button type="submit">Add account</button>
+</form>

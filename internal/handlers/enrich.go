@@ -4,9 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -18,10 +16,7 @@ import (
 
 const domainCheckTTL = 24 * time.Hour
 
-// enrichRunning prevents more than one enrichment run at a time.
-var enrichRunning atomic.Bool
-
-// enrichRateMu and enrichLastRun enforce a 60-second minimum gap between
+// enrichClearMu and enrichClearLastRun enforce a 60-second minimum gap between
 // /enrich/clear calls from the same process (the rate limiter in main.go
 // covers per-IP throttling; this covers the global case).
 var (
@@ -31,7 +26,9 @@ var (
 
 // HandleEnrichPage renders the enrichment overview page.
 func (a *App) HandleEnrichPage(c *fiber.Ctx) error {
-	uncachedIPs, err := database.ListUncachedSourceIPs(a.DB)
+	now := time.Now()
+
+	staleIPs, err := database.ListStaleSourceIPs(a.DB, now.Add(-ipinfo.CacheTTL).Unix())
 	if err != nil {
 		return err
 	}
@@ -41,128 +38,94 @@ func (a *App) HandleEnrichPage(c *fiber.Ctx) error {
 	}
 	domainChecks, _ := database.GetAllDomainChecks(a.DB)
 	staleCount := 0
-	now := time.Now()
 	for _, d := range domains {
 		dc, ok := domainChecks[d.Domain]
 		if !ok || dc.CheckedAt == 0 || now.Sub(time.Unix(dc.CheckedAt, 0)) > domainCheckTTL {
 			staleCount++
 		}
 	}
+
+	status := a.EnrichWorker.Status()
+	flashKind, flashMsg := getFlash(c)
 	return c.Render("enrich", fiber.Map{
-		"Title":        "Enrich — DMARC Reporter",
-		"Theme":        getTheme(c),
-		"ActivePage":   "enrich",
-		"UncachedIPs":  len(uncachedIPs),
-		"StaleDomains": staleCount,
-		"TotalDomains": len(domains),
-		"IMAPEnabled":  a.Cfg.IMAPHost != "",
-		"CSRFToken":    c.Locals("csrf"),
+		"Title":             "Enrich — DMARC Reporter",
+		"Theme":             getTheme(c),
+		"ActivePage":        "enrich",
+		"StaleIPs":          len(staleIPs),
+		"StaleDomains":      staleCount,
+		"TotalDomains":      len(domains),
+		"IMAPEnabled":       a.FetchEnabled(),
+		"EnrichRunning":     status.Running,
+		"EnrichIPDone":      status.IPDone,
+		"EnrichIPTotal":     status.IPTotal,
+		"EnrichDomainDone":  status.DomainDone,
+		"EnrichDomainTotal": status.DomainTotal,
+		"FlashKind":         flashKind,
+		"FlashMsg":          flashMsg,
+		"CSRFToken":         c.Locals("csrf"),
 	}, "layouts/base")
 }
 
-// HandleEnrichStream runs bulk enrichment and pushes progress via Server-Sent Events.
-func (a *App) HandleEnrichStream(c *fiber.Ctx) error {
-	if !enrichRunning.CompareAndSwap(false, true) {
-		return fiber.NewError(fiber.StatusConflict, "Enrichment already running")
+// HandleEnrichStart triggers a background enrichment run and redirects back
+// to the Enrich page. The run is owned by App.EnrichWorker, not by this
+// request, so it keeps going even after the response is sent and the browser
+// navigates away; /enrich/stream and subsequent loads of this page both
+// reflect its live progress.
+func (a *App) HandleEnrichStart(c *fiber.Ctx) error {
+	if a.EnrichWorker.Trigger() {
+		a.setFlash(c, "info", "Enrichment started in the background.")
+	} else {
+		a.setFlash(c, "info", "Enrichment is already running.")
 	}
-	defer enrichRunning.Store(false)
+	return c.Redirect("/enrich")
+}
 
+// HandleEnrichStream streams live progress for the current (or most recently
+// finished) enrichment run via Server-Sent Events. It only observes the
+// background worker's state — it never performs any work itself, so any
+// number of tabs can watch the same run and closing them does not stop it.
+func (a *App) HandleEnrichStream(c *fiber.Ctx) error {
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
 
-	db := a.DB
+	w := a.EnrichWorker
+	c.Context().SetBodyStreamWriter(fasthttp.StreamWriter(func(bw *bufio.Writer) {
+		// Subscribe before reading status so we cannot miss the terminal
+		// event that fires between our status read and the channel send.
+		ch, unsubscribe := w.subscribe()
+		defer unsubscribe()
 
-	c.Context().SetBodyStreamWriter(fasthttp.StreamWriter(func(w *bufio.Writer) {
-		send := func(eventName string, payload any) {
-			b, _ := json.Marshal(payload)
-			if eventName != "" {
-				fmt.Fprintf(w, "event: %s\n", eventName)
-			}
-			fmt.Fprintf(w, "data: %s\n\n", b)
-			w.Flush()
-		}
-
-		// ── IP enrichment ───────────────────────────────────────────────────
-		ips, err := database.ListUncachedSourceIPs(db)
-		if err != nil {
-			send("error", map[string]string{"message": err.Error()})
+		status := w.Status()
+		writeSSE(bw, "sync", status)
+		if !status.Running {
 			return
 		}
-		send("", map[string]any{"type": "ip_start", "total": len(ips)})
 
-		for i, ip := range ips {
-			country := ""
-			status := "ok"
-			if info, err := ipinfo.Get(db, ip); err != nil {
-				status = "error"
-				log.Printf("enrich: ipinfo.Get(%s): %v", ip, err)
-			} else if info != nil {
-				country = info.WhoisCountry
-			}
-			send("", map[string]any{
-				"type":    "ip",
-				"ip":      ip,
-				"status":  status,
-				"country": country,
-				"done":    i + 1,
-				"total":   len(ips),
-			})
-		}
-
-		// ── Domain enrichment ────────────────────────────────────────────────
-		domains, err := database.ListDomains(db)
-		if err != nil {
-			send("error", map[string]string{"message": err.Error()})
-			return
-		}
-		existingChecks, _ := database.GetAllDomainChecks(db)
-		now := time.Now()
-
-		var toCheck []string
-		for _, d := range domains {
-			dc, ok := existingChecks[d.Domain]
-			if !ok || dc.CheckedAt == 0 || now.Sub(time.Unix(dc.CheckedAt, 0)) > domainCheckTTL {
-				toCheck = append(toCheck, d.Domain)
+		for ev := range ch {
+			writeSSE(bw, ev.name, ev.data)
+			if ev.name == "done" || ev.name == "error" {
+				return
 			}
 		}
-		send("", map[string]any{"type": "domain_start", "total": len(toCheck)})
-
-		for i, domain := range toCheck {
-			hasDMARC := lookupDMARCRecord(domain).Found
-			hasBIMI := lookupBIMI(domain).Found
-			hasMTASTS := lookupMTASTS(domain).Found
-			dc := database.DomainCheck{
-				Domain:    domain,
-				HasDMARC:  boolToInt(hasDMARC),
-				HasBIMI:   boolToInt(hasBIMI),
-				HasMTASTS: boolToInt(hasMTASTS),
-				CheckedAt: now.Unix(),
-			}
-			if err := database.UpsertDomainCheck(db, dc); err != nil {
-				log.Printf("enrich: upsert %s: %v", domain, err)
-			}
-			send("", map[string]any{
-				"type":        "domain",
-				"domain":      domain,
-				"has_dmarc":   hasDMARC,
-				"has_bimi":    hasBIMI,
-				"has_mta_sts": hasMTASTS,
-				"done":        i + 1,
-				"total":       len(toCheck),
-			})
-		}
-
-		send("done", map[string]any{"ips": len(ips), "domains": len(toCheck)})
 	}))
 	return nil
+}
+
+func writeSSE(w *bufio.Writer, eventName string, payload any) {
+	b, _ := json.Marshal(payload)
+	if eventName != "" {
+		fmt.Fprintf(w, "event: %s\n", eventName)
+	}
+	fmt.Fprintf(w, "data: %s\n\n", b)
+	w.Flush()
 }
 
 // HandleEnrichClear deletes all cached DNS data so the next enrichment run
 // re-fetches everything from scratch. Rejected if enrichment is currently running.
 func (a *App) HandleEnrichClear(c *fiber.Ctx) error {
-	if enrichRunning.Load() {
+	if a.EnrichWorker.Status().Running {
 		a.setFlash(c, "error", "Cannot clear cache while enrichment is running.")
 		return c.Redirect("/enrich")
 	}
@@ -177,11 +140,4 @@ func (a *App) HandleEnrichClear(c *fiber.Ctx) error {
 	}
 	enrichClearLastRun = time.Now()
 	return c.Redirect("/enrich")
-}
-
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }

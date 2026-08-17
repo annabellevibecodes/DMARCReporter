@@ -1,6 +1,9 @@
 package database
 
 import (
+	"database/sql"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -74,13 +77,99 @@ type FailureRateStat struct {
 	TotalMessages int64   `db:"total_messages"`
 	Failed        int64   `db:"failed"`
 	FailRate      float64 `db:"fail_rate"`
+	RDNS          string  `db:"rdns"`
+	Provider      string  // friendly name derived from RDNS; filled by handlers
 }
 
-// TrendPoint is one data point in a pass/fail time series.
+// TrendPoint is one data point in a pass/fail time series. Week holds the
+// bucket label: an ISO week ("2026-31") or a date ("2026-08-01") depending on
+// the granularity the series was queried with.
 type TrendPoint struct {
 	Week   string `db:"week"`
 	Passed int64  `db:"passed"`
 	Failed int64  `db:"failed"`
+}
+
+// TrendDaily reports whether a period starting at from (Unix; 0 = all time)
+// is short enough to chart with daily rather than weekly buckets.
+func TrendDaily(from int64) bool {
+	return from > 0 && time.Since(time.Unix(from, 0)) <= 92*24*time.Hour
+}
+
+// trendBucketExpr returns the SQLite strftime expression for the bucket label.
+func trendBucketExpr(daily bool) string {
+	if daily {
+		return "strftime('%Y-%m-%d', datetime(r.date_range_begin, 'unixepoch'))"
+	}
+	return "strftime('%G-%V', datetime(r.date_range_begin, 'unixepoch'))"
+}
+
+// trendBucketLabel formats t the same way trendBucketExpr does in SQL.
+func trendBucketLabel(t time.Time, daily bool) string {
+	if daily {
+		return t.UTC().Format("2006-01-02")
+	}
+	y, w := t.UTC().ISOWeek()
+	return fmt.Sprintf("%04d-%02d", y, w)
+}
+
+// FillTrendGaps inserts zero-valued points for every bucket between from and to
+// (or between the first data point and now) that has no data, so charts show
+// quiet periods instead of interpolating across them.
+func FillTrendGaps(points []TrendPoint, from, to int64, daily bool) []TrendPoint {
+	if len(points) == 0 {
+		return points
+	}
+	byLabel := make(map[string]TrendPoint, len(points))
+	for _, p := range points {
+		byLabel[p.Week] = p
+	}
+
+	step := 7 * 24 * time.Hour
+	if daily {
+		step = 24 * time.Hour
+	}
+	start := time.Unix(from, 0)
+	if from == 0 {
+		// All time: no explicit lower bound — start at the first observed bucket.
+		start = bucketStartFromLabel(points[0].Week, daily)
+	}
+	end := time.Now().UTC()
+	if to > 0 {
+		end = time.Unix(to, 0)
+	}
+
+	var filled []TrendPoint
+	for t := start; !t.After(end); t = t.Add(step) {
+		label := trendBucketLabel(t, daily)
+		if len(filled) > 0 && filled[len(filled)-1].Week == label {
+			continue // week boundaries can repeat when stepping by 7d across DST
+		}
+		if p, ok := byLabel[label]; ok {
+			filled = append(filled, p)
+		} else {
+			filled = append(filled, TrendPoint{Week: label})
+		}
+	}
+	return filled
+}
+
+// bucketStartFromLabel parses a bucket label back into its starting time.
+func bucketStartFromLabel(label string, daily bool) time.Time {
+	if daily {
+		if t, err := time.Parse("2006-01-02", label); err == nil {
+			return t
+		}
+		return time.Now().UTC()
+	}
+	var y, w int
+	if _, err := fmt.Sscanf(label, "%d-%d", &y, &w); err != nil {
+		return time.Now().UTC()
+	}
+	// Jan 4 is always in ISO week 1; walk back to Monday, then forward w-1 weeks.
+	jan4 := time.Date(y, 1, 4, 0, 0, 0, 0, time.UTC)
+	monday := jan4.AddDate(0, 0, -(int(jan4.Weekday())+6)%7)
+	return monday.AddDate(0, 0, (w-1)*7)
 }
 
 // SourceStat holds aggregate stats for a source IP.
@@ -90,6 +179,8 @@ type SourceStat struct {
 	Passed        int64   `db:"passed"`
 	Failed        int64   `db:"failed"`
 	PassRate      float64 `db:"pass_rate"`
+	RDNS          string  `db:"rdns"`
+	Provider      string  // friendly name derived from RDNS; filled by handlers
 }
 
 // DomainStat holds aggregate stats for a domain.
@@ -139,13 +230,13 @@ func GetDashboardStats(db *sqlx.DB, f StatsFilter) (*DashboardStats, error) {
 	return &s, nil
 }
 
-// GetTrendData returns weekly pass/fail counts scoped by f.
-func GetTrendData(db *sqlx.DB, f StatsFilter) ([]TrendPoint, error) {
+// GetTrendData returns pass/fail counts scoped by f, bucketed daily or weekly.
+func GetTrendData(db *sqlx.DB, f StatsFilter, daily bool) ([]TrendPoint, error) {
 	var points []TrendPoint
 	where, args := f.where()
 	err := db.Select(&points, `
 		SELECT
-			strftime('%G-%V', datetime(r.date_range_begin, 'unixepoch')) AS week,
+			`+trendBucketExpr(daily)+` AS week,
 			COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass'
 				THEN rr.count ELSE 0 END), 0) AS passed,
 			COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass'
@@ -184,9 +275,11 @@ func GetTopFailingSources(db *sqlx.DB, minMessages int, limit int, f StatsFilter
 			SUM(rr.count) AS total_messages,
 			SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END) AS failed,
 			CAST(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END) AS REAL)
-				/ SUM(rr.count) AS fail_rate
+				/ SUM(rr.count) AS fail_rate,
+			COALESCE(MAX(ii.rdns), '') AS rdns
 		FROM record_rows rr
-		JOIN reports r ON r.id = rr.report_id`+where+`
+		JOIN reports r ON r.id = rr.report_id
+		LEFT JOIN ip_info ii ON ii.ip = rr.source_ip`+where+`
 		GROUP BY rr.source_ip
 		HAVING SUM(rr.count) >= ?
 		ORDER BY fail_rate DESC
@@ -299,10 +392,37 @@ func GetActivePolicy(db *sqlx.DB, f StatsFilter) (string, error) {
 		GROUP BY r.policy
 		ORDER BY SUM(rr.count) DESC
 		LIMIT 1`, args...)
-	if err != nil && err.Error() == "sql: no rows in result set" {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	return policy, err
+}
+
+// PolicyOverrideStat holds message volume for one policy-override reason
+// (forwarded, mailing_list, local_policy, trusted_forwarder, sampled_out, other).
+type PolicyOverrideStat struct {
+	Type          string `db:"type"`
+	TotalMessages int64  `db:"total_messages"`
+	SourceCount   int64  `db:"source_count"`
+}
+
+// GetPolicyOverrideBreakdown returns message volume grouped by policy-override
+// reason, scoped by f. These explain why receivers did not apply the published
+// policy — the main signal for separating forwarding from real spoofing.
+func GetPolicyOverrideBreakdown(db *sqlx.DB, f StatsFilter) ([]PolicyOverrideStat, error) {
+	var stats []PolicyOverrideStat
+	where, args := f.where()
+	err := db.Select(&stats, `
+		SELECT
+			CASE WHEN po.type = '' THEN 'other' ELSE po.type END AS type,
+			SUM(rr.count) AS total_messages,
+			COUNT(DISTINCT rr.source_ip) AS source_count
+		FROM policy_overrides po
+		JOIN record_rows rr ON rr.id = po.record_row_id
+		JOIN reports r ON r.id = rr.report_id`+where+`
+		GROUP BY 1
+		ORDER BY total_messages DESC`, args...)
+	return stats, err
 }
 
 // GeoStat holds aggregate message volume for a country code.
@@ -329,9 +449,11 @@ func GetTopSourcesByVolume(db *sqlx.DB, limit int, f StatsFilter) ([]SourceStat,
 			SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END) AS passed,
 			SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END) AS failed,
 			ROUND(100.0 * SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END)
-				/ NULLIF(SUM(rr.count), 0), 1) AS pass_rate
+				/ NULLIF(SUM(rr.count), 0), 1) AS pass_rate,
+			COALESCE(MAX(ii.rdns), '') AS rdns
 		FROM record_rows rr
-		JOIN reports r ON r.id = rr.report_id`+where+`
+		JOIN reports r ON r.id = rr.report_id
+		LEFT JOIN ip_info ii ON ii.ip = rr.source_ip`+where+`
 		GROUP BY rr.source_ip
 		ORDER BY total_messages DESC
 		LIMIT ?`, args...)
@@ -394,18 +516,19 @@ type DKIMSelectorStat struct {
 }
 
 // GetDKIMSelectorStats returns per-selector aggregate stats for all DKIM results tied to
-// record rows in reports for the given DMARC policy domain.
+// record rows in reports for the given DMARC policy domain. Counts are weighted by the
+// record row's message count so a high-volume row is not equal to a single message.
 func GetDKIMSelectorStats(db *sqlx.DB, domain string) ([]DKIMSelectorStat, error) {
 	var stats []DKIMSelectorStat
 	err := db.Select(&stats, `
 		SELECT
 			dk.selector,
 			dk.domain AS signing_domain,
-			COUNT(*) AS total,
-			SUM(CASE WHEN dk.result = 'pass' THEN 1 ELSE 0 END) AS passed,
-			SUM(CASE WHEN dk.result != 'pass' THEN 1 ELSE 0 END) AS failed,
-			ROUND(100.0 * SUM(CASE WHEN dk.result = 'pass' THEN 1 ELSE 0 END)
-				/ NULLIF(COUNT(*), 0), 1) AS pass_rate
+			SUM(rr.count) AS total,
+			SUM(CASE WHEN dk.result = 'pass' THEN rr.count ELSE 0 END) AS passed,
+			SUM(CASE WHEN dk.result != 'pass' THEN rr.count ELSE 0 END) AS failed,
+			ROUND(100.0 * SUM(CASE WHEN dk.result = 'pass' THEN rr.count ELSE 0 END)
+				/ NULLIF(SUM(rr.count), 0), 1) AS pass_rate
 		FROM dkim_results dk
 		JOIN record_rows rr ON rr.id = dk.record_row_id
 		JOIN reports r ON r.id = rr.report_id
@@ -416,39 +539,33 @@ func GetDKIMSelectorStats(db *sqlx.DB, domain string) ([]DKIMSelectorStat, error
 	return stats, err
 }
 
-// GetDomainTrend returns weekly pass/fail counts for a specific domain.
+// GetDomainTrend returns pass/fail counts for a specific domain, bucketed daily or weekly.
 // If from > 0, only data from reports whose date_range_begin >= from is included.
-func GetDomainTrend(db *sqlx.DB, domain string, from int64) ([]TrendPoint, error) {
-	var points []TrendPoint
-	var err error
-	if from > 0 {
-		err = db.Select(&points, `
-			SELECT
-				strftime('%G-%V', datetime(r.date_range_begin, 'unixepoch')) AS week,
-				COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass'
-					THEN rr.count ELSE 0 END), 0) AS passed,
-				COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass'
-					THEN rr.count ELSE 0 END), 0) AS failed
-			FROM reports r
-			JOIN record_rows rr ON rr.report_id = r.id
-			WHERE r.domain = ? AND r.date_range_begin >= ?
-			GROUP BY week
-			ORDER BY week`, domain, from)
-	} else {
-		err = db.Select(&points, `
-			SELECT
-				strftime('%G-%V', datetime(r.date_range_begin, 'unixepoch')) AS week,
-				COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass'
-					THEN rr.count ELSE 0 END), 0) AS passed,
-				COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass'
-					THEN rr.count ELSE 0 END), 0) AS failed
-			FROM reports r
-			JOIN record_rows rr ON rr.report_id = r.id
-			WHERE r.domain = ?
-			GROUP BY week
-			ORDER BY week`, domain)
-	}
-	return points, err
+func GetDomainTrend(db *sqlx.DB, domain string, from int64, daily bool) ([]TrendPoint, error) {
+	f := StatsFilter{Domain: domain, From: from}
+	return GetTrendData(db, f, daily)
+}
+
+// ListDomainsFiltered returns per-domain aggregate stats scoped by f,
+// ordered worst pass-rate first. Used by exports so the downloaded report
+// matches the on-screen period/domain scope.
+func ListDomainsFiltered(db *sqlx.DB, f StatsFilter) ([]DomainStat, error) {
+	var stats []DomainStat
+	where, args := f.where()
+	err := db.Select(&stats, `
+		SELECT
+			r.domain,
+			COUNT(DISTINCT r.id) AS report_count,
+			SUM(rr.count) AS total_messages,
+			SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END) AS passed,
+			SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END) AS failed,
+			ROUND(100.0 * SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass' THEN rr.count ELSE 0 END)
+				/ NULLIF(SUM(rr.count), 0), 1) AS pass_rate
+		FROM reports r
+		JOIN record_rows rr ON rr.report_id = r.id`+where+`
+		GROUP BY r.domain
+		ORDER BY pass_rate ASC`, args...)
+	return stats, err
 }
 
 // DomainAggStats holds period-scoped aggregate stats for a single policy domain.

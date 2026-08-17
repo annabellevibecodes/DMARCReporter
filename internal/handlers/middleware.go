@@ -5,12 +5,23 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/annabellevibecodes/dmarcreporter/internal/config"
+	"github.com/annabellevibecodes/dmarcreporter/internal/database"
+	"github.com/annabellevibecodes/dmarcreporter/internal/ingest"
 )
 
 // App holds shared dependencies for all handlers.
 type App struct {
-	DB  *sqlx.DB
-	Cfg config.Config
+	DB           *sqlx.DB
+	Cfg          config.Config
+	Worker       *ingest.Worker
+	EnrichWorker *EnrichWorker
+}
+
+// FetchEnabled reports whether any enabled mail account exists, controlling
+// visibility of the Fetch button.
+func (a *App) FetchEnabled() bool {
+	n, err := database.CountEnabledAccounts(a.DB)
+	return err == nil && n > 0
 }
 
 // ErrorHandler renders the error page for unhandled errors.

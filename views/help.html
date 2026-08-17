@@ -9,8 +9,12 @@
     <a href="#policies">Policies</a> &middot;
     <a href="#alignment">Alignment</a> &middot;
     <a href="#disposition">Disposition</a> &middot;
+    <a href="#overrides">Policy Overrides</a> &middot;
     <a href="#bimi">BIMI</a> &middot;
     <a href="#mta-sts">MTA-STS</a> &middot;
+    <a href="#tlsrpt">TLS-RPT</a> &middot;
+    <a href="#accounts">Mail Accounts</a> &middot;
+    <a href="#alerts">Alerts</a> &middot;
     <a href="#reading">Reading the Dashboard</a>
   </small>
 </nav>
@@ -183,6 +187,33 @@
   </p>
 </article>
 
+<!-- Policy Overrides -->
+<article id="overrides">
+  <header><strong>Policy Overrides ("Forgiven Failures")</strong></header>
+  <p>
+    Receivers sometimes decline to apply your published policy to a failing message, and say why
+    in a <code>&lt;reason&gt;</code> block attached to the record. The Dashboard's
+    <strong>Forgiven Failures</strong> card summarises these by volume — they are the main tool for
+    telling apart legitimate mail that got mangled in transit from actual spoofing.
+  </p>
+  <table>
+    <thead><tr><th>Reason type</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>forwarded</code></td><td>The message was forwarded (e.g. by a mailbox rule or alias), which typically breaks SPF but is not spoofing</td></tr>
+      <tr><td><code>mailing_list</code></td><td>Sent through a mailing list that modifies the message, similarly breaking SPF/DKIM alignment</td></tr>
+      <tr><td><code>local_policy</code></td><td>The receiver applied its own policy instead of yours (e.g. a trusted-sender allowlist)</td></tr>
+      <tr><td><code>trusted_forwarder</code></td><td>The receiver recognises the forwarding service as trustworthy</td></tr>
+      <tr><td><code>sampled_out</code></td><td>The message was excluded from policy enforcement by the <code>pct</code> sampling tag</td></tr>
+      <tr><td><code>other</code></td><td>A reason not covered by the standard types above</td></tr>
+    </tbody>
+  </table>
+  <p>
+    A large <code>forwarded</code> or <code>mailing_list</code> volume is usually benign. A large
+    <code>local_policy</code> volume from a source you do not recognise is worth investigating —
+    it means a receiver chose to deliver mail your policy would otherwise have blocked.
+  </p>
+</article>
+
 <!-- BIMI -->
 <article id="bimi">
   <header><strong>BIMI — Brand Indicators for Message Identification</strong></header>
@@ -239,6 +270,92 @@
   </p>
 </article>
 
+<!-- TLS-RPT -->
+<article id="tlsrpt">
+  <header><strong>TLS-RPT — SMTP TLS Reporting</strong></header>
+  <p>
+    TLS-RPT (RFC 8460) is a companion standard to MTA-STS. Where DMARC reports tell you whether
+    incoming mail claiming to be from your domain authenticated correctly, TLS-RPT reports tell you
+    whether senders were able to establish secure (TLS) connections <em>to</em> your mail servers at
+    all. They arrive as JSON documents in the same mailbox as DMARC reports and are parsed and
+    stored automatically.
+  </p>
+  <p><strong>DNS record:</strong></p>
+  <pre><code>_smtp._tls.example.com  TXT  "v=TLSRPTv1; rua=mailto:tls-reports@example.com;"</code></pre>
+  <p>
+    View imported reports on the <a href="/tlsrpt">TLS Reports</a> page — it shows total successful
+    and failed sessions per reporter and period. A rising failure count usually points to an expiring
+    or misconfigured TLS certificate, or an MTA-STS policy that no longer matches your MX records.
+  </p>
+</article>
+
+<!-- Mail Accounts -->
+<article id="accounts">
+  <header><strong>Fetching Reports from Mailboxes</strong></header>
+  <p>
+    The <a href="/accounts">Accounts</a> page manages the mailboxes that DMARC and TLS-RPT reports
+    are fetched from. Each account is one mailbox; you can add as many as you need (e.g. one per
+    domain, or one shared inbox across several receivers). Clicking <strong>Fetch</strong> in the
+    navigation bar — or configuring <code>FETCH_INTERVAL</code> to run automatically — triggers a
+    background run across every enabled account. Progress and the outcome of the last run are
+    shown per account on the Accounts page.
+  </p>
+  <p><strong>Supported account types:</strong></p>
+  <table>
+    <thead><tr><th>Type</th><th>Authentication</th></tr></thead>
+    <tbody>
+      <tr><td>Generic IMAP</td><td>Username and password over TLS</td></tr>
+      <tr>
+        <td>Gmail / Google Workspace</td>
+        <td>
+          Either an <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">app password</a>
+          (requires 2-step verification), or OAuth2: create a Web-application OAuth client in Google
+          Cloud Console, enter its client ID and secret when adding the account (leave the password
+          blank), then complete the Google consent screen you are redirected to. The refresh token is
+          stored encrypted and access tokens renew automatically.
+        </td>
+      </tr>
+      <tr>
+        <td>Office 365 / Exchange Online</td>
+        <td>
+          OAuth2 only — Microsoft has disabled basic authentication for IMAP. Register an app in
+          Entra ID with the <code>IMAP.AccessAsApp</code> application permission (admin consent
+          required), grant its service principal mailbox access via
+          <code>New-ServicePrincipal</code> + <code>Add-MailboxPermission</code> in Exchange Online
+          PowerShell, then enter the tenant ID, client ID, and client secret when adding the account.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Use <strong>Test</strong> on the Accounts page to verify connectivity and mailbox access without
+    fetching or moving anything. Processed emails are moved to a subfolder (created automatically,
+    named to match the server's folder-naming convention) so re-running a fetch never re-imports the
+    same message.
+  </p>
+</article>
+
+<!-- Alerts -->
+<article id="alerts">
+  <header><strong>Alerts</strong></header>
+  <p>
+    When <code>ALERT_WEBHOOK_URL</code> and/or <code>SMTP_HOST</code> are configured, the
+    application watches for two conditions after each fetch and notifies you automatically:
+  </p>
+  <ul>
+    <li><strong>Pass-rate drop</strong> — the 7-day DMARC pass rate falls by more than
+        <code>ALERT_PASS_RATE_DROP</code> percentage points (default 5.0) compared to the previous
+        7 days, with enough volume in both windows to be meaningful.</li>
+    <li><strong>New failing source</strong> — a source IP seen for the first time in the last 48
+        hours is failing DMARC.</li>
+  </ul>
+  <p>
+    Each alert is delivered once (deduplicated) as a JSON payload to the webhook and/or as a plain
+    email to <code>SMTP_TO</code>. Alerts complement the dashboard rather than replace it — check
+    the <strong>Forgiven Failures</strong> and <strong>Domains at Risk</strong> cards for the full picture.
+  </p>
+</article>
+
 <!-- Reading the dashboard -->
 <article id="reading">
   <header><strong>Reading This Dashboard</strong></header>
@@ -267,6 +384,14 @@
     Each row in an aggregate report represents one source IP sending mail that claims to be
     from your domain. Unexpected IPs you do not recognise could indicate a misconfigured
     service, a compromised account, or an active spoofing attempt.
+  </p>
+  <p><strong>Provider labels</strong></p>
+  <p>
+    Where reverse DNS is cached for a source IP, the Sources pages and dashboard show a friendly
+    provider name (Google, Microsoft 365, SendGrid, Mailchimp, and others) instead of a bare IP
+    address, so at a glance you can tell "a known ESP is failing DKIM" from "an unrecognised IP is
+    sending mail as you." Run the <a href="/enrich">Enrich</a> page to populate this for IPs that
+    have not been looked up yet.
   </p>
   <p><strong>Data Enrichment</strong></p>
   <p>

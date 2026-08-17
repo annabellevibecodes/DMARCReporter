@@ -1,37 +1,20 @@
 package handlers
 
 import (
-	"fmt"
-	"log"
-
 	"github.com/gofiber/fiber/v2"
-
-	"github.com/annabellevibecodes/dmarcreporter/internal/audit"
-	imapingest "github.com/annabellevibecodes/dmarcreporter/internal/imap"
 )
 
+// HandleFetch starts a background fetch run across all enabled accounts.
 func (a *App) HandleFetch(c *fiber.Ctx) error {
-	if a.Cfg.IMAPHost == "" {
-		a.setFlash(c, "error", "IMAP is not configured.")
-		return c.Redirect("/")
+	if !a.FetchEnabled() {
+		a.setFlash(c, "error", "No mail accounts configured. Add one under Accounts.")
+		return c.Redirect("/accounts")
 	}
 
-	audit.IMAPFetchStarted(a.Cfg.IMAPMailbox)
-
-	count, err := imapingest.IngestAll(a.Cfg, a.DB)
-	if err != nil {
-		log.Printf("IMAP fetch error: %v", err)
-		audit.IMAPFetchFailed(a.Cfg.IMAPMailbox)
-		a.setFlash(c, "error", "IMAP fetch failed. Check server logs for details.")
-		return c.Redirect("/reports")
-	}
-
-	audit.IMAPFetchCompleted(a.Cfg.IMAPMailbox, count)
-
-	if count == 0 {
-		a.setFlash(c, "info", "No new reports found — mailbox is empty or all messages are already imported.")
+	if a.Worker.TriggerAll() {
+		a.setFlash(c, "info", "Fetch started in the background — results appear under Accounts and Reports shortly.")
 	} else {
-		a.setFlash(c, "success", fmt.Sprintf("Imported %d new report(s) from mailbox.", count))
+		a.setFlash(c, "info", "A fetch is already running.")
 	}
-	return c.Redirect("/reports")
+	return c.Redirect("/accounts")
 }

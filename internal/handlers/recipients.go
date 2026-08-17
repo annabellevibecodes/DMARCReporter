@@ -56,7 +56,7 @@ func (a *App) HandleRecipientDetail(c *fiber.Ctx) error {
 		"PassRate":       passRate,
 		"UniqueIPs":      len(uniqueIPs),
 		"UniqueSenders":  len(uniqueSenders),
-		"IMAPEnabled":    a.Cfg.IMAPHost != "",
+		"IMAPEnabled":    a.FetchEnabled(),
 		"CSRFToken":      c.Locals("csrf"),
 	}, "layouts/base")
 }

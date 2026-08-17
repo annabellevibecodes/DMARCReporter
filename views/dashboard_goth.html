@@ -12,9 +12,11 @@
     <span style="margin-left:14px;font-size:11px;color:#6e6a60;letter-spacing:.04em;">~/mail.security &mdash; ssh never_again@reality</span>
     <nav style="margin-left:auto;display:flex;align-items:center;gap:20px;">
       <a href="/"         style="font-size:11px;color:#d4d0c8;text-decoration:none;letter-spacing:.04em;">dashboard</a>
-      <a href="/reports"  style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">reports</a>
+      <a href="/reports/dmarc"  style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">reports</a>
       <a href="/domains"  style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">domains</a>
       <a href="/sources"  style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">senders</a>
+      <a href="/tlsrpt"   style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">tls</a>
+      <a href="/accounts" style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">accounts</a>
       <a href="/help"     style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">help</a>
       <a href="/upload"   style="font-size:11px;color:#c1121f;text-decoration:none;font-weight:700;letter-spacing:.04em;">[upload]</a>
       {{if .IMAPEnabled}}
@@ -112,7 +114,7 @@
       <div style="padding:14px 24px;border-bottom:1px solid #1a1a1e;">
         <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:8px;">
           <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;02</span>
-          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:18px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">Weekly compliance</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:18px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">Compliance over time</span>
           <span style="font-size:11px;color:#6e6a60;">// {{.PeriodLabel}}. it goes up and down. that's the whole bit</span>
         </div>
         <div id="goth-sparkline" style="font-size:20px;color:#c1121f;letter-spacing:.04em;margin-bottom:8px;white-space:pre;"></div>
@@ -143,7 +145,7 @@
           <tbody>
           {{range .TopFailingSources}}
             <tr style="border-bottom:1px solid #1a1a1e;">
-              <td style="padding:8px 8px;font-variant-numeric:tabular-nums;"><a href="/sources/{{.SourceIP}}" style="color:{{if ge .FailRate 0.5}}#c1121f{{else}}#d4d0c8{{end}};text-decoration:none;">{{.SourceIP}}</a></td>
+              <td style="padding:8px 8px;font-variant-numeric:tabular-nums;"><a href="/sources/{{.SourceIP}}" style="color:{{if ge .FailRate 0.5}}#c1121f{{else}}#d4d0c8{{end}};text-decoration:none;">{{.SourceIP}}</a>{{if .Provider}}<div style="font-size:10px;color:#6e6a60;">{{.Provider}}</div>{{end}}</td>
               <td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;color:#d4d0c8;">{{commaN .TotalMessages}}</td>
               <td style="padding:8px 8px;text-align:right;font-variant-numeric:tabular-nums;color:#c1121f;">{{commaN .Failed}}</td>
               <td style="padding:8px 8px;color:#6e6a60;font-size:11px;" id="goth-bar-{{.SourceIP}}"></td>
@@ -177,7 +179,7 @@
           <tbody>
           {{range .TopByVolume}}
             <tr style="border-bottom:1px solid #1a1a1e;">
-              <td style="padding:7px 8px;"><a href="/sources/{{.SourceIP}}" style="color:#d4d0c8;text-decoration:none;">{{.SourceIP}}</a></td>
+              <td style="padding:7px 8px;"><a href="/sources/{{.SourceIP}}" style="color:#d4d0c8;text-decoration:none;">{{.SourceIP}}</a>{{if .Provider}}<div style="font-size:10px;color:#6e6a60;">{{.Provider}}</div>{{end}}</td>
               <td style="padding:7px 8px;text-align:right;font-variant-numeric:tabular-nums;color:#d4d0c8;">{{commaN .TotalMessages}}</td>
               <td style="padding:7px 8px;text-align:right;font-variant-numeric:tabular-nums;color:{{if ge .PassRate 99.0}}#5a8a5a{{else if ge .PassRate 80.0}}#b89a3e{{else}}#c1121f{{end}};">{{printf "%.1f%%" .PassRate}}</td>
             </tr>
@@ -252,6 +254,29 @@
         </div>
         {{else}}
         <div style="color:#6e6a60;font-size:12px;font-style:italic;">// all domains are compliant. for now.</div>
+        {{end}}
+      </div>
+
+      <!-- §05b Policy overrides -->
+      <div style="padding:16px 22px;border-bottom:1px solid #1a1a1e;flex-shrink:0;">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px;">
+          <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;05b</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:18px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">Forgiven failures</span>
+          <span style="font-size:11px;color:#6e6a60;">// why receivers overrode your policy</span>
+        </div>
+        {{if .PolicyOverrides}}
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          {{range .PolicyOverrides}}
+          <div style="display:flex;align-items:center;gap:10px;font-size:12px;">
+            <span style="flex:1;color:#d4d0c8;">{{.Type}}</span>
+            <span style="color:#6e6a60;font-size:11px;">{{.SourceCount}} src</span>
+            <span style="color:#b89a3e;font-variant-numeric:tabular-nums;font-weight:700;">{{commaN .TotalMessages}}</span>
+          </div>
+          {{end}}
+        </div>
+        <div style="color:#6e6a60;font-size:11px;font-style:italic;margin-top:8px;">// forwarded &amp; mailing_list are usually legitimate mail mangled in transit.</div>
+        {{else}}
+        <div style="color:#6e6a60;font-size:12px;font-style:italic;">// no overrides reported. receivers applied your policy verbatim.</div>
         {{end}}
       </div>
 

@@ -15,6 +15,7 @@ const sourcesPageSize = 100
 
 type sourceSummary struct {
 	SourceIP      string
+	Provider      string
 	TotalMessages int64
 	Passed        int64
 	Failed        int64
@@ -63,6 +64,7 @@ func (a *App) HandleSourcesList(c *fiber.Ctx) error {
 		}
 		rows[i] = sourceSummary{
 			SourceIP:      s.SourceIP,
+			Provider:      ipinfo.ProviderFromRDNS(s.RDNS),
 			TotalMessages: s.TotalMessages,
 			Passed:        s.Passed,
 			Failed:        s.Failed,
@@ -90,7 +92,7 @@ func (a *App) HandleSourcesList(c *fiber.Ctx) error {
 		"MinMessages":         minMessages,
 		"SortBy":              sortBy,
 		"SortDir":             sortDir,
-		"IMAPEnabled":         a.Cfg.IMAPHost != "",
+		"IMAPEnabled":         a.FetchEnabled(),
 		"CSRFToken":           c.Locals("csrf"),
 	}, "layouts/base")
 }
@@ -131,7 +133,7 @@ func (a *App) HandleSourceDetail(c *fiber.Ctx) error {
 		"PeriodOptions":  periodOptions,
 		"SelectedPeriod": period,
 		"PeriodLabel":    periodLabel,
-		"IMAPEnabled":    a.Cfg.IMAPHost != "",
+		"IMAPEnabled":    a.FetchEnabled(),
 		"CSRFToken":      c.Locals("csrf"),
 	}, "layouts/base")
 }

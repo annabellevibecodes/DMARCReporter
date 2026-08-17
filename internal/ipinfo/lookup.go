@@ -15,7 +15,9 @@ import (
 
 var whoisClient = whois.NewClient().SetTimeout(15 * time.Second)
 
-const cacheTTL = 7 * 24 * time.Hour
+// CacheTTL is how long cached reverse DNS / WHOIS data is considered fresh
+// before Get() performs a live re-lookup.
+const CacheTTL = 7 * 24 * time.Hour
 
 // Info holds resolved metadata for a single IP address.
 type Info struct {
@@ -36,7 +38,7 @@ func Get(db *sqlx.DB, ip string) (*Info, error) {
 		return nil, err
 	}
 	age := time.Since(time.Unix(info.LookedUpAt, 0))
-	if info.LookedUpAt == 0 || age > cacheTTL {
+	if info.LookedUpAt == 0 || age > CacheTTL {
 		if err := resolve(info); err != nil {
 			// Non-fatal: return whatever we have (may be empty).
 			_ = err

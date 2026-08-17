@@ -8,7 +8,7 @@ func (a *App) HandleHelpPage(c *fiber.Ctx) error {
 		"Title":       "Help — DMARC Reporter",
 		"Theme":       getTheme(c),
 		"ActivePage":  "help",
-		"IMAPEnabled": a.Cfg.IMAPHost != "",
+		"IMAPEnabled": a.FetchEnabled(),
 		"CSRFToken":   c.Locals("csrf"),
 	}, "layouts/base")
 }

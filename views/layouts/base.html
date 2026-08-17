@@ -32,9 +32,11 @@
     <span style="margin-left:14px;font-size:11px;color:#6e6a60;letter-spacing:.04em;">~/mail.security &mdash; ssh never_again@reality</span>
     <nav style="margin-left:auto;display:flex;align-items:center;gap:20px;">
         <a href="/"        style="font-size:11px;color:{{if eq .ActivePage "dashboard"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">dashboard</a>
-        <a href="/reports" style="font-size:11px;color:{{if eq .ActivePage "reports"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">reports</a>
+        <a href="/reports/dmarc" style="font-size:11px;color:{{if eq .ActivePage "reports"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">reports</a>
         <a href="/domains" style="font-size:11px;color:{{if eq .ActivePage "domains"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">domains</a>
         <a href="/sources" style="font-size:11px;color:{{if eq .ActivePage "sources"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">senders</a>
+        <a href="/tlsrpt" style="font-size:11px;color:{{if eq .ActivePage "tlsrpt"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">tls</a>
+        <a href="/accounts" style="font-size:11px;color:{{if eq .ActivePage "accounts"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">accounts</a>
         <a href="/help"    style="font-size:11px;color:{{if eq .ActivePage "help"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">help</a>
         <a href="/upload"  style="font-size:11px;color:#c1121f;text-decoration:none;font-weight:{{if eq .ActivePage "upload"}}900{{else}}700{{end}};letter-spacing:.04em;">[upload]</a>
         {{if .IMAPEnabled}}
@@ -64,9 +66,11 @@
     </div>
     <div style="margin-left:36px;display:flex;gap:24px;font-size:13px;color:#7a3055;font-weight:500;">
         <a href="/"        style="color:{{if eq .ActivePage "dashboard"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "dashboard"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Dashboard</a>
-        <a href="/reports" style="color:{{if eq .ActivePage "reports"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "reports"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Reports</a>
+        <a href="/reports/dmarc" style="color:{{if eq .ActivePage "reports"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "reports"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Reports</a>
         <a href="/domains" style="color:{{if eq .ActivePage "domains"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "domains"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Domains</a>
         <a href="/sources" style="color:{{if eq .ActivePage "sources"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "sources"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Senders</a>
+        <a href="/tlsrpt"  style="color:{{if eq .ActivePage "tlsrpt"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "tlsrpt"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">TLS</a>
+        <a href="/accounts" style="color:{{if eq .ActivePage "accounts"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "accounts"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Accounts</a>
         <a href="/help"    style="color:{{if eq .ActivePage "help"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "help"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Help</a>
     </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
@@ -94,9 +98,11 @@
         <a href="/" style="color:#0e2a4a;text-decoration:none;font-family:'Cormorant Garamond',serif;font-weight:600;font-style:normal;font-size:18px;">The DMARC Reporter</a>
         <nav style="display:flex;gap:20px;align-items:center;">
             <a href="/"        style="color:{{if eq .ActivePage "dashboard"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "dashboard"}}normal{{else}}italic{{end}};{{if eq .ActivePage "dashboard"}}font-weight:600;{{end}}">Dashboard</a>
-            <a href="/reports" style="color:{{if eq .ActivePage "reports"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "reports"}}normal{{else}}italic{{end}};{{if eq .ActivePage "reports"}}font-weight:600;{{end}}">Reports</a>
+            <a href="/reports/dmarc" style="color:{{if eq .ActivePage "reports"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "reports"}}normal{{else}}italic{{end}};{{if eq .ActivePage "reports"}}font-weight:600;{{end}}">Reports</a>
             <a href="/domains" style="color:{{if eq .ActivePage "domains"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "domains"}}normal{{else}}italic{{end}};{{if eq .ActivePage "domains"}}font-weight:600;{{end}}">Domains</a>
             <a href="/sources" style="color:{{if eq .ActivePage "sources"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "sources"}}normal{{else}}italic{{end}};{{if eq .ActivePage "sources"}}font-weight:600;{{end}}">Senders</a>
+            <a href="/tlsrpt"  style="color:{{if eq .ActivePage "tlsrpt"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "tlsrpt"}}normal{{else}}italic{{end}};{{if eq .ActivePage "tlsrpt"}}font-weight:600;{{end}}">TLS</a>
+            <a href="/accounts" style="color:{{if eq .ActivePage "accounts"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "accounts"}}normal{{else}}italic{{end}};{{if eq .ActivePage "accounts"}}font-weight:600;{{end}}">Accounts</a>
             <a href="/help"    style="color:{{if eq .ActivePage "help"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "help"}}normal{{else}}italic{{end}};{{if eq .ActivePage "help"}}font-weight:600;{{end}}">Help</a>
             <a href="/upload"  style="color:#0e2a4a;text-decoration:none;font-style:normal;font-weight:{{if eq .ActivePage "upload"}}700{{else}}600{{end}};">Upload &#8599;</a>
             {{if .IMAPEnabled}}
@@ -128,9 +134,11 @@
         </ul>
         <ul>
             <li><a href="/"        {{if eq .ActivePage "dashboard"}}aria-current="page"{{end}}>Dashboard</a></li>
-            <li><a href="/reports" {{if eq .ActivePage "reports"}}aria-current="page"{{end}}>Reports</a></li>
+            <li><a href="/reports/dmarc" {{if eq .ActivePage "reports"}}aria-current="page"{{end}}>Reports</a></li>
             <li><a href="/domains" {{if eq .ActivePage "domains"}}aria-current="page"{{end}}>Domains</a></li>
             <li><a href="/sources" {{if eq .ActivePage "sources"}}aria-current="page"{{end}}>Senders</a></li>
+            <li><a href="/tlsrpt" {{if eq .ActivePage "tlsrpt"}}aria-current="page"{{end}}>TLS</a></li>
+            <li><a href="/accounts" {{if eq .ActivePage "accounts"}}aria-current="page"{{end}}>Accounts</a></li>
             <li><a href="/help"    {{if eq .ActivePage "help"}}aria-current="page"{{end}}>Help</a></li>
             <li><a href="/upload" role="button" class="outline secondary nav-upload" {{if eq .ActivePage "upload"}}aria-current="page"{{end}}>Upload</a></li>
             {{if .IMAPEnabled}}

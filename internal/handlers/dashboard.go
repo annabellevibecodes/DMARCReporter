@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
+	"github.com/annabellevibecodes/dmarcreporter/internal/ipinfo"
 )
 
 // PeriodOption is one choice in the reporting-period selector.
@@ -79,10 +80,12 @@ func (a *App) HandleDashboard(c *fiber.Ctx) error {
 		return err
 	}
 
-	trend, err := database.GetTrendData(a.DB, f)
+	trendDaily := database.TrendDaily(from)
+	trend, err := database.GetTrendData(a.DB, f, trendDaily)
 	if err != nil {
 		return err
 	}
+	trend = database.FillTrendGaps(trend, from, to, trendDaily)
 
 	failureModes, err := database.GetFailureModeBreakdown(a.DB, f)
 	if err != nil {
@@ -93,10 +96,16 @@ func (a *App) HandleDashboard(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	for i := range topFailing {
+		topFailing[i].Provider = ipinfo.ProviderFromRDNS(topFailing[i].RDNS)
+	}
 
 	topByVolume, err := database.GetTopSourcesByVolume(a.DB, 10, f)
 	if err != nil {
 		return err
+	}
+	for i := range topByVolume {
+		topByVolume[i].Provider = ipinfo.ProviderFromRDNS(topByVolume[i].RDNS)
 	}
 
 	geoDistribution, err := database.GetGeoDistribution(a.DB, 15, f)
@@ -110,6 +119,11 @@ func (a *App) HandleDashboard(c *fiber.Ctx) error {
 	}
 
 	domainsAtRisk, err := database.GetDomainsAtRisk(a.DB, 95.0, f)
+	if err != nil {
+		return err
+	}
+
+	policyOverrides, err := database.GetPolicyOverrideBreakdown(a.DB, f)
 	if err != nil {
 		return err
 	}
@@ -148,26 +162,18 @@ func (a *App) HandleDashboard(c *fiber.Ctx) error {
 		topDomains = append(topDomains, d.Domain)
 	}
 
+	// Cache-only: the background refresher (StartDomainCheckRefresher) keeps
+	// domain_checks fresh, so the dashboard never blocks on live DNS lookups.
 	var bimiConfigured, bimiTotal, mtaStsConfigured int
-	now := time.Now()
 	for _, d := range allDomains {
 		bimiTotal++
-		dc, cached := domainCheckCache[d.Domain]
-		if !cached || dc.CheckedAt == 0 || now.Sub(time.Unix(dc.CheckedAt, 0)) > domainCheckTTL {
-			dc = database.DomainCheck{
-				Domain:    d.Domain,
-				HasDMARC:  boolToInt(lookupDMARCRecord(d.Domain).Found),
-				HasBIMI:   boolToInt(lookupBIMI(d.Domain).Found),
-				HasMTASTS: boolToInt(lookupMTASTS(d.Domain).Found),
-				CheckedAt: now.Unix(),
+		if dc, ok := domainCheckCache[d.Domain]; ok {
+			if dc.HasBIMI == 1 {
+				bimiConfigured++
 			}
-			_ = database.UpsertDomainCheck(a.DB, dc)
-		}
-		if dc.HasBIMI == 1 {
-			bimiConfigured++
-		}
-		if dc.HasMTASTS == 1 {
-			mtaStsConfigured++
+			if dc.HasMTASTS == 1 {
+				mtaStsConfigured++
+			}
 		}
 	}
 	bimiNotConfigured := bimiTotal - bimiConfigured
@@ -259,6 +265,7 @@ func (a *App) HandleDashboard(c *fiber.Ctx) error {
 		"TopByVolume":       topByVolume,
 		"GeoDistribution":   geoDistribution,
 		"DomainsAtRisk":     domainsAtRisk,
+		"PolicyOverrides":   policyOverrides,
 		"RecentReports":     recentReports,
 		"TrendData":         template.JS(trendBytes),
 		"FailureModeData":   template.JS(fmBytes),
@@ -272,7 +279,7 @@ func (a *App) HandleDashboard(c *fiber.Ctx) error {
 		"PeriodOptions":     periodOptions,
 		"SelectedPeriod":    period,
 		"PeriodLabel":       periodLabel,
-		"IMAPEnabled":       a.Cfg.IMAPHost != "",
+		"IMAPEnabled":       a.FetchEnabled(),
 		"FlashKind":         flashKind,
 		"FlashMsg":          flashMsg,
 		"CSRFToken":         c.Locals("csrf"),

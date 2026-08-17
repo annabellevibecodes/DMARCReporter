@@ -96,7 +96,11 @@ func writeSummarySheet(f *excelize.File, rd *ReportData, headerStyle, subHeaderS
 
 	f.SetCellValue(sh, "A2", "Generated")
 	f.SetCellValue(sh, "B2", rd.GeneratedAt.Format("2006-01-02 15:04:05 UTC"))
-	f.SetCellStyle(sh, "A2", "A2", boldStyle)
+	if rd.PeriodLabel != "" {
+		f.SetCellValue(sh, "A3", "Period")
+		f.SetCellValue(sh, "B3", rd.PeriodLabel)
+	}
+	f.SetCellStyle(sh, "A2", "A3", boldStyle)
 
 	row := 4
 	f.SetCellValue(sh, cell(1, row), "Metric")
@@ -137,7 +141,7 @@ func writeDomainsSheet(f *excelize.File, rd *ReportData, headerStyle int) {
 
 	for i, d := range rd.Domains {
 		r := i + 2
-		f.SetCellValue(sh, cell(1, r), d.Domain)
+		f.SetCellValue(sh, cell(1, r), escapeFormula(d.Domain))
 		setCellInt(f, sh, cell(2, r), d.ReportCount)
 		setCellInt(f, sh, cell(3, r), d.TotalMessages)
 		setCellInt(f, sh, cell(4, r), d.Passed)
@@ -162,13 +166,13 @@ func writeRecordsSheet(f *excelize.File, rd *ReportData, headerStyle int) {
 
 	for i, r := range rd.Records {
 		row := i + 2
-		f.SetCellValue(sh, cell(1, row), r.SourceIP)
+		f.SetCellValue(sh, cell(1, row), escapeFormula(r.SourceIP))
 		f.SetCellValue(sh, cell(2, row), r.Count)
-		f.SetCellValue(sh, cell(3, row), r.Disposition)
-		f.SetCellValue(sh, cell(4, row), r.EvalDKIM)
-		f.SetCellValue(sh, cell(5, row), r.EvalSPF)
-		f.SetCellValue(sh, cell(6, row), r.EnvelopeTo)
-		f.SetCellValue(sh, cell(7, row), r.OrgName)
+		f.SetCellValue(sh, cell(3, row), escapeFormula(r.Disposition))
+		f.SetCellValue(sh, cell(4, row), escapeFormula(r.EvalDKIM))
+		f.SetCellValue(sh, cell(5, row), escapeFormula(r.EvalSPF))
+		f.SetCellValue(sh, cell(6, row), escapeFormula(r.EnvelopeTo))
+		f.SetCellValue(sh, cell(7, row), escapeFormula(r.OrgName))
 		f.SetCellValue(sh, cell(8, row), time.Unix(r.DateRangeBegin, 0).UTC().Format("2006-01-02"))
 		f.SetCellValue(sh, cell(9, row), time.Unix(r.DateRangeEnd, 0).UTC().Format("2006-01-02"))
 	}
@@ -194,7 +198,7 @@ func writeSourcesSheet(f *excelize.File, rd *ReportData, headerStyle int) {
 
 	for i, s := range rd.TopSources {
 		r := i + 2
-		f.SetCellValue(sh, cell(1, r), s.SourceIP)
+		f.SetCellValue(sh, cell(1, r), escapeFormula(s.SourceIP))
 		setCellInt(f, sh, cell(2, r), s.TotalMessages)
 		setCellInt(f, sh, cell(3, r), s.Failed)
 		setCellFloat(f, sh, cell(4, r), s.FailRate*100)
