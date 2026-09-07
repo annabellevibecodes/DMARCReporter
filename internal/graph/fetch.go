@@ -58,15 +58,28 @@ func userPath(mailbox string) string {
 	return baseURL + "/users/" + url.PathEscape(mailbox)
 }
 
+// encodeQuery builds a URL query string, percent-encoding spaces as %20
+// rather than url.Values.Encode()'s default '+' — Graph's OData query
+// parser expects %20 (see the $filter/$select examples in its docs).
+func encodeQuery(params map[string]string) string {
+	v := url.Values{}
+	for k, val := range params {
+		v.Set(k, val)
+	}
+	return strings.ReplaceAll(v.Encode(), "+", "%20")
+}
+
 // resolveProcessedFolder returns the ID of the child folder named name under
 // parentFolderID, creating it if it does not already exist.
 func resolveProcessedFolder(ctx context.Context, token, mailbox, parentFolderID, name string) (string, error) {
 	if name == "" {
 		name = "Processed"
 	}
-	listURL := fmt.Sprintf("%s/mailFolders/%s/childFolders?$filter=%s",
-		userPath(mailbox), url.PathEscape(parentFolderID),
-		url.QueryEscape(fmt.Sprintf("displayName eq '%s'", escapeODataString(name))))
+	query := encodeQuery(map[string]string{
+		"$filter": fmt.Sprintf("displayName eq '%s'", escapeODataString(name)),
+	})
+	listURL := fmt.Sprintf("%s/mailFolders/%s/childFolders?%s",
+		userPath(mailbox), url.PathEscape(parentFolderID), query)
 	var fl folderList
 	if err := doJSON(ctx, token, "GET", listURL, nil, &fl); err != nil {
 		return "", fmt.Errorf("list child folders: %w", err)
@@ -89,8 +102,12 @@ func resolveProcessedFolder(ctx context.Context, token, mailbox, parentFolderID,
 // at least one attachment, following pagination.
 func listCandidateMessages(ctx context.Context, token, mailbox, folderID string) ([]string, error) {
 	var ids []string
-	next := fmt.Sprintf("%s/mailFolders/%s/messages?$filter=hasAttachments eq true&$select=id&$top=50",
-		userPath(mailbox), url.PathEscape(folderID))
+	query := encodeQuery(map[string]string{
+		"$filter": "hasAttachments eq true",
+		"$select": "id",
+		"$top":    "50",
+	})
+	next := fmt.Sprintf("%s/mailFolders/%s/messages?%s", userPath(mailbox), url.PathEscape(folderID), query)
 	for next != "" {
 		var ml messageList
 		if err := doJSON(ctx, token, "GET", next, nil, &ml); err != nil {
