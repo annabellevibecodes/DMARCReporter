@@ -13,6 +13,7 @@ const (
 	ProviderIMAP  = "imap"
 	ProviderGmail = "gmail"
 	ProviderO365  = "o365"
+	ProviderGraph = "msgraph" // Office 365 via the Microsoft Graph REST API (no IMAP)
 )
 
 // Account auth types.
@@ -144,9 +145,12 @@ func SetAccountEnabled(db *sqlx.DB, id int64, enabled bool) error {
 	return err
 }
 
-// DeleteAccount removes an account and its seen-UID cache.
+// DeleteAccount removes an account and its seen-message caches.
 func DeleteAccount(db *sqlx.DB, id int64) error {
 	if _, err := db.Exec(`DELETE FROM imap_seen WHERE account_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`DELETE FROM graph_seen WHERE account_id = ?`, id); err != nil {
 		return err
 	}
 	_, err := db.Exec(`DELETE FROM accounts WHERE id = ?`, id)
@@ -196,6 +200,40 @@ func MarkUIDsSeen(db *sqlx.DB, accountID int64, uidValidity uint32, uids []uint3
 		if _, err := tx.Exec(`
 			INSERT OR IGNORE INTO imap_seen (account_id, uidvalidity, uid, seen_at)
 			VALUES (?,?,?,?)`, accountID, uidValidity, u, time.Now().Unix()); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// GetSeenGraphIDs returns the cached set of examined Graph message IDs for an account.
+func GetSeenGraphIDs(db *sqlx.DB, accountID int64) (map[string]bool, error) {
+	var ids []string
+	if err := db.Select(&ids, `SELECT message_id FROM graph_seen WHERE account_id = ?`, accountID); err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		seen[id] = true
+	}
+	return seen, nil
+}
+
+// MarkGraphIDsSeen records Graph message IDs as examined-with-no-report so
+// they are skipped next time.
+func MarkGraphIDsSeen(db *sqlx.DB, accountID int64, messageIDs []string) error {
+	if len(messageIDs) == 0 {
+		return nil
+	}
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, id := range messageIDs {
+		if _, err := tx.Exec(`
+			INSERT OR IGNORE INTO graph_seen (account_id, message_id, seen_at)
+			VALUES (?,?,?)`, accountID, id, time.Now().Unix()); err != nil {
 			return err
 		}
 	}

@@ -76,7 +76,8 @@
       <select name="provider">
         <option value="imap">Generic IMAP</option>
         <option value="gmail">Gmail / Google Workspace</option>
-        <option value="o365">Office 365 / Exchange Online</option>
+        <option value="o365">Office 365 / Exchange Online (IMAP)</option>
+        <option value="msgraph">Office 365 (Microsoft Graph API)</option>
       </select>
     </label>
   </div>
@@ -84,7 +85,7 @@
     <label>Username / email
       <input type="text" name="username" placeholder="dmarc@example.com" required>
     </label>
-    <label>Mailbox
+    <label>Mailbox <small>(Graph API: well-known name like <code>inbox</code>, or a folder ID)</small>
       <input type="text" name="mailbox" value="INBOX">
     </label>
     <label>Processed mailbox <small>(blank = auto)</small>
@@ -95,7 +96,7 @@
   <details>
     <summary>Generic IMAP settings (host, port, TLS, password)</summary>
     <div class="grid">
-      <label>Host <small>(ignored for Gmail/O365 presets)</small>
+      <label>Host <small>(ignored for Gmail/O365/Graph presets)</small>
         <input type="text" name="host" placeholder="mail.example.com">
       </label>
       <label>Port
@@ -119,10 +120,13 @@
       <strong>Gmail:</strong> create an OAuth client (type “Web application”) in Google Cloud Console with redirect URI
       <code>{{"{"}}BASE_URL{{"}"}}/oauth/google/callback</code>, then enter its client ID and secret here; you will be sent
       through Google's consent screen after saving.<br>
-      <strong>Office 365:</strong> Microsoft has disabled password auth for IMAP. Register an Entra ID app with the
+      <strong>Office 365 (IMAP):</strong> Microsoft has disabled password auth for IMAP. Register an Entra ID app with the
       <code>IMAP.AccessAsApp</code> application permission (admin consent required), grant the service principal access to the
       mailbox via <code>New-ServicePrincipal</code> + <code>Add-MailboxPermission</code>, then enter tenant ID, client ID, and
-      client secret.
+      client secret.<br>
+      <strong>Office 365 (Microsoft Graph API):</strong> register an Entra ID app with the <code>Mail.ReadWrite</code>
+      application permission (admin consent required) instead of <code>IMAP.AccessAsApp</code>, then enter tenant ID, client
+      ID, and client secret. No IMAP access is used or required.
     </small></p>
     <div class="grid">
       <label>Tenant ID <small>(O365 only)</small>

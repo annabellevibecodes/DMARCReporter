@@ -10,18 +10,23 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
+	"github.com/annabellevibecodes/dmarcreporter/internal/graph"
 	"github.com/annabellevibecodes/dmarcreporter/internal/imap"
 	"github.com/annabellevibecodes/dmarcreporter/internal/ingest"
 	"github.com/annabellevibecodes/dmarcreporter/internal/mailauth"
 )
 
-// providerPreset fills in host/port for the well-known providers.
+// providerPreset fills in host/port for the well-known providers. Host/port
+// are unused for the Graph API provider (no socket is dialed) — the values
+// returned are cosmetic, just enough to pass validation.
 func providerPreset(provider, host, port string) (string, string) {
 	switch provider {
 	case database.ProviderGmail:
 		return "imap.gmail.com", "993"
 	case database.ProviderO365:
 		return "outlook.office365.com", "993"
+	case database.ProviderGraph:
+		return "graph.microsoft.com", "443"
 	default:
 		if port == "" {
 			port = "993"
@@ -76,13 +81,17 @@ func (a *App) HandleAccountCreate(c *fiber.Ctx) error {
 		return c.Redirect("/accounts")
 	}
 	switch provider {
-	case database.ProviderIMAP, database.ProviderGmail, database.ProviderO365:
+	case database.ProviderIMAP, database.ProviderGmail, database.ProviderO365, database.ProviderGraph:
 	default:
 		a.setFlash(c, "error", "Unknown provider.")
 		return c.Redirect("/accounts")
 	}
 	if mailbox == "" {
-		mailbox = "INBOX"
+		if provider == database.ProviderGraph {
+			mailbox = "inbox"
+		} else {
+			mailbox = "INBOX"
+		}
 	}
 	host, port := providerPreset(provider, strings.TrimSpace(c.FormValue("host")), strings.TrimSpace(c.FormValue("port")))
 	if host == "" {
@@ -110,6 +119,13 @@ func (a *App) HandleAccountCreate(c *fiber.Ctx) error {
 	case database.ProviderO365:
 		if sec.Tenant == "" || sec.ClientID == "" || sec.ClientSecret == "" {
 			a.setFlash(c, "error", "Office 365 needs tenant ID, client ID, and client secret (basic auth is disabled by Microsoft).")
+			return c.Redirect("/accounts")
+		}
+		authType = database.AuthOAuthClient
+		sec.Password = ""
+	case database.ProviderGraph:
+		if sec.Tenant == "" || sec.ClientID == "" || sec.ClientSecret == "" {
+			a.setFlash(c, "error", "Office 365 (Graph API) needs tenant ID, client ID, and client secret.")
 			return c.Redirect("/accounts")
 		}
 		authType = database.AuthOAuthClient
@@ -212,6 +228,21 @@ func (a *App) HandleAccountTest(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+
+	if acc.Provider == database.ProviderGraph {
+		token, err := a.Worker.GraphAccessToken(acc)
+		if err != nil {
+			a.setFlash(c, "error", fmt.Sprintf("Account %q: %v", acc.Name, err))
+			return c.Redirect("/accounts")
+		}
+		if err := graph.TestAccount(*acc, token); err != nil {
+			a.setFlash(c, "error", fmt.Sprintf("Account %q: connection test failed: %v", acc.Name, err))
+			return c.Redirect("/accounts")
+		}
+		a.setFlash(c, "success", fmt.Sprintf("Account %q: connection and mailbox OK.", acc.Name))
+		return c.Redirect("/accounts")
+	}
+
 	password, saslClient, err := a.Worker.Credentials(acc)
 	if err != nil {
 		a.setFlash(c, "error", fmt.Sprintf("Account %q: %v", acc.Name, err))

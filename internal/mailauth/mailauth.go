@@ -27,6 +27,8 @@ const (
 	msftTokenURLFmt = "https://login.microsoftonline.com/%s/oauth2/v2.0/token"
 	// msftScope is the resource scope for IMAP client-credential tokens.
 	msftScope = "https://outlook.office365.com/.default"
+	// graphScope is the resource scope for Microsoft Graph client-credential tokens.
+	graphScope = "https://graph.microsoft.com/.default"
 )
 
 var httpClient = &http.Client{Timeout: 30 * time.Second}
@@ -96,7 +98,11 @@ func (m *Manager) AccessToken(ctx context.Context, acc *database.Account, sec *d
 	case database.AuthOAuthRefresh:
 		token, expiresIn, err = refreshTokenGrant(ctx, sec.ClientID, sec.ClientSecret, sec.RefreshToken)
 	case database.AuthOAuthClient:
-		token, expiresIn, err = clientCredentialsGrant(ctx, sec.Tenant, sec.ClientID, sec.ClientSecret)
+		scope := msftScope
+		if acc.Provider == database.ProviderGraph {
+			scope = graphScope
+		}
+		token, expiresIn, err = clientCredentialsGrant(ctx, sec.Tenant, sec.ClientID, sec.ClientSecret, scope)
 	default:
 		return "", fmt.Errorf("account %q does not use OAuth (auth_type=%s)", acc.Name, acc.AuthType)
 	}
@@ -161,10 +167,12 @@ func refreshTokenGrant(ctx context.Context, clientID, clientSecret, refreshToken
 	return tr.AccessToken, tr.ExpiresIn, nil
 }
 
-// clientCredentialsGrant obtains an app-only access token from Entra ID for
-// Office 365 IMAP (requires the IMAP.AccessAsApp application permission and
-// mailbox access granted to the service principal).
-func clientCredentialsGrant(ctx context.Context, tenant, clientID, clientSecret string) (string, int, error) {
+// clientCredentialsGrant obtains an app-only access token from Entra ID,
+// used both for Office 365 IMAP (scope msftScope, requires the
+// IMAP.AccessAsApp application permission and mailbox access granted to the
+// service principal) and for the Microsoft Graph API (scope graphScope,
+// requires the Mail.ReadWrite application permission).
+func clientCredentialsGrant(ctx context.Context, tenant, clientID, clientSecret, scope string) (string, int, error) {
 	if tenant == "" {
 		return "", 0, fmt.Errorf("o365 account is missing the tenant ID")
 	}
@@ -172,7 +180,7 @@ func clientCredentialsGrant(ctx context.Context, tenant, clientID, clientSecret 
 		"grant_type":    {"client_credentials"},
 		"client_id":     {clientID},
 		"client_secret": {clientSecret},
-		"scope":         {msftScope},
+		"scope":         {scope},
 	})
 	if err != nil {
 		return "", 0, fmt.Errorf("o365 token: %w", err)

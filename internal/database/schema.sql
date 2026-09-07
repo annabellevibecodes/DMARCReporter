@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS ip_info (
 CREATE TABLE IF NOT EXISTS accounts (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     name                TEXT    NOT NULL UNIQUE,
-    provider            TEXT    NOT NULL DEFAULT 'imap',      -- imap | gmail | o365
+    provider            TEXT    NOT NULL DEFAULT 'imap',      -- imap | gmail | o365 | msgraph
     host                TEXT    NOT NULL DEFAULT '',
     port                TEXT    NOT NULL DEFAULT '993',
     username            TEXT    NOT NULL DEFAULT '',
@@ -140,6 +140,17 @@ CREATE TABLE IF NOT EXISTS imap_seen (
     uid         INTEGER NOT NULL,
     seen_at     INTEGER NOT NULL DEFAULT (unixepoch()),
     PRIMARY KEY (account_id, uidvalidity, uid)
+);
+
+-- Graph message IDs already examined (and found to carry no report
+-- attachments), so subsequent fetches skip them without re-downloading.
+-- Equivalent to imap_seen but for the Microsoft Graph API provider, whose
+-- message IDs are opaque strings rather than UID/UIDVALIDITY pairs.
+CREATE TABLE IF NOT EXISTS graph_seen (
+    account_id  INTEGER NOT NULL,
+    message_id  TEXT    NOT NULL,
+    seen_at     INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (account_id, message_id)
 );
 
 -- SMTP TLS reports (RFC 8460), delivered as JSON alongside DMARC reports.

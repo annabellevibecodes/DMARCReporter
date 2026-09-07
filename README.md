@@ -7,7 +7,7 @@ A web application for parsing, storing, and visualising DMARC aggregate reports.
 ## Features
 
 - Parse DMARC aggregate report XML files (`.xml`, `.xml.gz`, `.gz`, `.zip`), raw email files (`.eml`), and SMTP TLS reports (RFC 8460, `.json` / `.json.gz`)
-- Fetch reports from multiple mailboxes managed under **Accounts**: generic IMAP (password), **Gmail / Google Workspace** (app password or OAuth2), and **Office 365** (OAuth2 client credentials — required, since Microsoft disabled basic auth)
+- Fetch reports from multiple mailboxes managed under **Accounts**: generic IMAP (password), **Gmail / Google Workspace** (app password or OAuth2), and **Office 365** via IMAP or the **Microsoft Graph API** (both OAuth2 client credentials — required, since Microsoft disabled basic auth)
 - Background fetching: manual trigger or scheduled via `FETCH_INTERVAL`; a two-phase BODYSTRUCTURE fetch downloads only messages that carry report attachments, and report-free messages are cached by UID so they are never downloaded twice
 - Processed emails are moved to a subfolder; the folder name adapts to the server's hierarchy delimiter (`INBOX.Processed` on Dovecot, `INBOX/Processed` on Gmail/O365) unless overridden
 - Account credentials are encrypted at rest (AES-256-GCM) with `SECRETS_KEY` or an auto-generated key file next to the database
@@ -84,6 +84,16 @@ Microsoft has disabled basic authentication for IMAP, so OAuth2 is required:
    Add-MailboxPermission -Identity dmarc@example.com -User <sp-object-id> -AccessRights FullAccess
    ```
 4. Add an Office 365 account on the Accounts page with the tenant ID, client ID, and client secret.
+
+Use **Test** on the Accounts page to verify connectivity before the first fetch.
+
+### Office 365 (Microsoft Graph API)
+
+An alternative to the IMAP option above that talks to the mailbox over the Graph REST API instead of IMAP — useful when IMAP is disabled for the tenant:
+
+1. Register an application in Entra ID (Azure AD).
+2. Add the **API permission** `Microsoft Graph → Mail.ReadWrite` (application permission) and grant admin consent. Application permissions apply tenant-wide by default; scope access to a specific mailbox with an [application access policy](https://learn.microsoft.com/en-us/graph/auth-limit-mailbox-access) if needed.
+3. Add an **Office 365 (Microsoft Graph API)** account on the Accounts page with the tenant ID, client ID, client secret, and the mailbox's email address as the username. "Mailbox" accepts a well-known folder name (`inbox`, the default) or an explicit Graph folder ID.
 
 Use **Test** on the Accounts page to verify connectivity before the first fetch.
 
@@ -249,7 +259,7 @@ The table below lists every connection the application makes or accepts. Use it 
 | Port | Protocol | Direction | Purpose | Required |
 |------|----------|-----------|---------|----------|
 | `993` ² | TCP | server → | IMAP over TLS — fetching reports from configured mail accounts | Only when accounts are configured |
-| `143` ² | TCP | server → | IMAP without TLS — **dev/test only**, never use in production | Only when TLS is disabled on an account |
+| `143` ² | TCP | server → | IMAP with STARTTLS or unencypted — **dev/test only**, never use it unencrypted in production | Only when TLS is disabled on an account or it uses STARTTLS |
 | `443` | TCP | server → | OAuth2 token endpoints (`oauth2.googleapis.com`, `login.microsoftonline.com`) | Only for Gmail/O365 OAuth accounts |
 | `443` | TCP | server → | Alert webhook delivery | Only when `ALERT_WEBHOOK_URL` is set |
 | `587` | TCP | server → | SMTP submission for alert emails | Only when `SMTP_HOST` is set |

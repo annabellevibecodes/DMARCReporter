@@ -17,6 +17,7 @@ import (
 	"github.com/annabellevibecodes/dmarcreporter/internal/audit"
 	"github.com/annabellevibecodes/dmarcreporter/internal/config"
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
+	"github.com/annabellevibecodes/dmarcreporter/internal/graph"
 	"github.com/annabellevibecodes/dmarcreporter/internal/imap"
 	"github.com/annabellevibecodes/dmarcreporter/internal/mailauth"
 	"github.com/annabellevibecodes/dmarcreporter/internal/secrets"
@@ -139,11 +140,30 @@ func (w *Worker) runAll() (int, error) {
 }
 
 func (w *Worker) ingestOne(acc database.Account) (int, error) {
+	if acc.Provider == database.ProviderGraph {
+		token, err := w.GraphAccessToken(&acc)
+		if err != nil {
+			return 0, err
+		}
+		return graph.IngestAccount(w.DB, acc, token)
+	}
 	password, saslClient, err := w.Credentials(&acc)
 	if err != nil {
 		return 0, err
 	}
 	return imap.IngestAccount(w.DB, acc, password, saslClient)
+}
+
+// GraphAccessToken decrypts the account's secrets and returns a bearer token
+// for the Microsoft Graph API.
+func (w *Worker) GraphAccessToken(acc *database.Account) (string, error) {
+	sec, err := w.DecryptSecrets(acc)
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return w.Auth.AccessToken(ctx, acc, sec)
 }
 
 // Credentials decrypts the account's secrets and returns either a password or
