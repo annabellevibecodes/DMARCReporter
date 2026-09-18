@@ -7,7 +7,7 @@ import (
 // DomainCheck holds the cached DNS check results for a single domain.
 type DomainCheck struct {
 	Domain    string `db:"domain"`
-	HasDMARC  int    `db:"has_dmarc"`   // 1 = record found, 0 = not found
+	HasDMARC  int    `db:"has_dmarc"` // 1 = record found, 0 = not found
 	HasBIMI   int    `db:"has_bimi"`
 	HasMTASTS int    `db:"has_mta_sts"`
 	CheckedAt int64  `db:"checked_at"` // Unix timestamp; 0 = never checked
@@ -46,7 +46,10 @@ func ClearDNSCache(db *sqlx.DB) error {
 	if _, err := db.Exec(`DELETE FROM ip_info`); err != nil {
 		return err
 	}
-	_, err := db.Exec(`DELETE FROM domain_checks`)
+	if _, err := db.Exec(`DELETE FROM domain_checks`); err != nil {
+		return err
+	}
+	_, err := db.Exec(`DELETE FROM spf_authorized_cache`)
 	return err
 }
 

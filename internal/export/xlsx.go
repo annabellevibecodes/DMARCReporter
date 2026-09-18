@@ -15,8 +15,8 @@ func WriteXLSX(w io.Writer, rd *ReportData) error {
 
 	// Styles
 	headerStyle, _ := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Bold: true, Color: "FFFFFF", Size: 10},
-		Fill: excelize.Fill{Type: "pattern", Color: []string{"0E2A4A"}, Pattern: 1},
+		Font:      &excelize.Font{Bold: true, Color: "FFFFFF", Size: 10},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"0E2A4A"}, Pattern: 1},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true},
 	})
 	subHeaderStyle, _ := f.NewStyle(&excelize.Style{
@@ -48,9 +48,81 @@ func WriteXLSX(w io.Writer, rd *ReportData) error {
 	if len(rd.TopSources) > 0 {
 		writeSourcesSheet(f, rd, headerStyle)
 	}
+	writeAnalyticsSheet(f, rd, headerStyle, subHeaderStyle)
 
 	// Remove the default blank Sheet1 if we renamed it
 	return f.Write(w)
+}
+
+// writeAnalyticsSheet adds the matrix, enforcement, policy, new-source and
+// open-alert sections on one "Analytics" sheet.
+func writeAnalyticsSheet(f *excelize.File, rd *ReportData, headerStyle, subHeaderStyle int) {
+	const sh = "Analytics"
+	f.NewSheet(sh)
+	row := 1
+	section := func(title string) {
+		f.SetCellValue(sh, cell(1, row), title)
+		f.SetCellStyle(sh, cell(1, row), cell(1, row), subHeaderStyle)
+		row++
+	}
+	kv := func(rows [][2]string) {
+		for _, r := range rows {
+			f.SetCellValue(sh, cell(1, row), r[0])
+			f.SetCellValue(sh, cell(2, row), escapeFormula(r[1]))
+			row++
+		}
+		row++
+	}
+	table := func(headers []string, rows [][]string) {
+		for i, h := range headers {
+			f.SetCellValue(sh, cell(i+1, row), h)
+		}
+		f.SetCellStyle(sh, cell(1, row), cell(len(headers), row), headerStyle)
+		row++
+		for _, r := range rows {
+			for i, c := range r {
+				f.SetCellValue(sh, cell(i+1, row), escapeFormula(c))
+			}
+			row++
+		}
+		row++
+	}
+
+	matrix, enforcement := analyticsKV(rd)
+	if len(matrix) > 0 {
+		section("Authentication Matrix")
+		kv(matrix)
+	}
+	if len(enforcement) > 0 {
+		section("Enforcement Effectiveness")
+		kv(enforcement)
+	}
+	if len(rd.PolicyTags) > 0 {
+		section("Published Policy")
+		kv([][2]string{{"Record", joinStrings(rd.PolicyTags, " ")}})
+	}
+	if len(rd.DomainPolicies) > 0 {
+		section("Published Policy by Domain")
+		rows := make([][]string, len(rd.DomainPolicies))
+		for i, d := range rd.DomainPolicies {
+			rows[i] = []string{d.Domain, joinStrings(d.Tags, " ")}
+		}
+		table([]string{"Domain", "Effective Record"}, rows)
+	}
+	if rows := changeLogRows(rd); len(rows) > 0 {
+		section("Policy Change Log")
+		table(changeLogHeaders, rows)
+	}
+	if rows := newSourceRows(rd); len(rows) > 0 {
+		section("New Sources This Period")
+		table(newSourceHeaders, rows)
+	}
+	if rows := alertRows(rd); len(rows) > 0 {
+		section("Open Alerts")
+		table(alertHeaders, rows)
+	}
+	f.SetColWidth(sh, "A", "A", 34)
+	f.SetColWidth(sh, "B", "G", 22)
 }
 
 func setCellStr(f *excelize.File, sheet, cell, val string) {

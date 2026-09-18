@@ -1,16 +1,17 @@
 package handlers
 
 import (
-	"errors"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/annabellevibecodes/dmarcreporter/internal/alerts"
 	"github.com/annabellevibecodes/dmarcreporter/internal/audit"
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
-	"github.com/annabellevibecodes/dmarcreporter/internal/models"
+	"github.com/annabellevibecodes/dmarcreporter/internal/importer"
 	"github.com/annabellevibecodes/dmarcreporter/internal/parser"
 )
 
@@ -47,6 +48,7 @@ func (a *App) HandleUploadSubmit(c *fiber.Ctx) error {
 
 	for _, fh := range files {
 		if fh.Size > maxUploadSize {
+			importer.RecordRejected(a.DB, database.IngestSourceUpload, fh.Filename, "exceeds the 10 MB limit")
 			a.setFlash(c, "error", "File exceeds the 10 MB limit.")
 			return c.Redirect("/upload")
 		}
@@ -55,75 +57,61 @@ func (a *App) HandleUploadSubmit(c *fiber.Ctx) error {
 		if err != nil {
 			return err
 		}
-		defer f.Close()
-
-		// TLS-RPT (RFC 8460) JSON reports have their own parse/store path.
-		if parser.IsTLSRPTFile(fh.Filename) {
-			report, rawJSON, parseErr := parser.ParseTLSRPT(fh.Filename, f)
-			if parseErr != nil {
-				log.Printf("upload parse error for %q: %v", fh.Filename, parseErr)
-				audit.ReportParseFailed(fh.Filename)
-				a.setFlash(c, "error", "File could not be parsed as an SMTP TLS report.")
-				return c.Redirect("/upload")
-			}
-			if _, err := database.SaveTLSRPT(a.DB, report, fh.Filename, rawJSON); err != nil {
-				if errors.Is(err, database.ErrDuplicate) {
-					audit.ReportDuplicate(fh.Filename, report.OrganizationName, report.ReportID)
-					duplicates++
-					continue
-				}
-				return err
-			}
-			audit.ReportImported(fh.Filename, report.OrganizationName, "(tlsrpt)", report.ReportID, len(report.Policies))
-			imported++
-			continue
+		data, err := io.ReadAll(io.LimitReader(f, maxUploadSize+1))
+		f.Close()
+		if err != nil {
+			return err
 		}
 
-		var feedbacks []*models.Feedback
-		var filenames []string
-		var rawXMLs [][]byte
-
-		if strings.HasSuffix(strings.ToLower(fh.Filename), ".eml") {
-			feedbacks, filenames, rawXMLs, err = parser.ParseEML(f)
-			if err != nil {
-				log.Printf("upload parse error for %q: %v", fh.Filename, err)
+		var atts []importer.Attachment
+		isEML := strings.HasSuffix(strings.ToLower(fh.Filename), ".eml")
+		if isEML {
+			// Raw email: extract every DMARC / TLS-RPT attachment and the Date header.
+			parts, _, perr := parser.ExtractEMLAttachments(data, nil)
+			if perr != nil || len(parts) == 0 {
+				if perr == nil {
+					perr = fmt.Errorf("no DMARC or TLS-RPT report attachments found")
+				}
+				log.Printf("upload parse error for %q: %v", fh.Filename, perr)
 				audit.ReportParseFailed(fh.Filename)
-				a.setFlash(c, "error", "Email file could not be parsed. No DMARC report attachments found.")
+				_ = database.RecordIngestEvent(a.DB, database.IngestEvent{
+					Source: database.IngestSourceUpload, Filename: fh.Filename,
+					Kind: database.IngestKindUnknown, Status: database.IngestStatusParseError,
+					Error: perr.Error(),
+				})
+				a.setFlash(c, "error", "Email file could not be parsed. No DMARC or TLS-RPT report attachments found.")
 				return c.Redirect("/upload")
+			}
+			for _, p := range parts {
+				atts = append(atts, importer.Attachment{Filename: p.Filename, Data: p.Data, ReceivedAt: p.ReceivedAt})
 			}
 		} else {
-			fb, rawXML, parseErr := parser.Parse(fh.Filename, f)
-			if parseErr != nil {
-				log.Printf("upload parse error for %q: %v", fh.Filename, parseErr)
-				audit.ReportParseFailed(fh.Filename)
-				a.setFlash(c, "error", "File could not be parsed as a DMARC report. Check the format and try again.")
-				return c.Redirect("/upload")
-			}
-			feedbacks = []*models.Feedback{fb}
-			filenames = []string{fh.Filename}
-			rawXMLs = [][]byte{rawXML}
+			atts = []importer.Attachment{{Filename: fh.Filename, Data: data}}
 		}
 
-		for i, fb := range feedbacks {
-			filename := filenames[i]
-			id, err := database.SaveReport(a.DB, fb, filename, rawXMLs[i])
-			if err != nil {
-				if errors.Is(err, database.ErrDuplicate) {
-					audit.ReportDuplicate(filename, fb.ReportMetadata.OrgName, fb.ReportMetadata.ReportID)
-					duplicates++
-					continue
-				}
-				return err
-			}
-			audit.ReportImported(filename,
-				fb.ReportMetadata.OrgName,
-				fb.PolicyPublished.Domain,
-				fb.ReportMetadata.ReportID,
-				len(fb.Records),
-			)
-			imported++
-			lastID = id
+		res, err := importer.SaveAttachments(a.DB, database.IngestSourceUpload, "", atts)
+		if err != nil {
+			return err
 		}
+		if res.Failed > 0 && res.Imported == 0 && res.Duplicates == 0 {
+			if parser.IsTLSRPTFile(fh.Filename) {
+				a.setFlash(c, "error", "File could not be parsed as an SMTP TLS report.")
+			} else if isEML {
+				a.setFlash(c, "error", "Email file could not be parsed. No DMARC report attachments found.")
+			} else {
+				a.setFlash(c, "error", "File could not be parsed as a DMARC report. Check the format and try again.")
+			}
+			return c.Redirect("/upload")
+		}
+		imported += res.Imported
+		duplicates += res.Duplicates
+		if res.LastReportID != 0 {
+			lastID = res.LastReportID
+		}
+	}
+
+	if imported > 0 {
+		go alerts.Evaluate(a.DB, a.Cfg)
 	}
 
 	switch {

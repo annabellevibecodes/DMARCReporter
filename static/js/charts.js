@@ -298,3 +298,79 @@ function initSelectorBarChart(canvasId, dataScriptId) {
         sel.addEventListener('change', function () { this.form.submit(); });
     });
 }());
+
+// Tooltips for metric identifiers (C5, S4, …).
+//
+// The server renders each reference with a title attribute, so the native
+// tooltip works without JavaScript. When this runs it takes the title over
+// into a styled, instantly-shown bubble: the attribute is removed so the two
+// never appear at once, and kept on the element so it can be restored.
+(function () {
+    var refs = document.querySelectorAll('a.metric-id[title]');
+    if (!refs.length) return;
+
+    var tip = null;
+
+    function ensureTip() {
+        if (!tip) {
+            tip = document.createElement('div');
+            tip.className = 'metric-tip';
+            tip.setAttribute('role', 'tooltip');
+            tip.hidden = true;
+            document.body.appendChild(tip);
+        }
+        return tip;
+    }
+
+    function show(el) {
+        var text = el.dataset.tip;
+        if (!text) return;
+        var t = ensureTip();
+        // "C5 · Authentication matrix — summary" renders as a heading and body.
+        var split = text.indexOf(' — ');
+        t.textContent = '';
+        if (split > -1) {
+            var head = document.createElement('b');
+            head.textContent = text.slice(0, split);
+            t.appendChild(head);
+            t.appendChild(document.createTextNode(text.slice(split + 3)));
+        } else {
+            t.textContent = text;
+        }
+
+        t.hidden = false;
+        // Measure, then keep the bubble inside the viewport on both axes.
+        var r = el.getBoundingClientRect();
+        var box = t.getBoundingClientRect();
+        var left = r.left + r.width / 2 - box.width / 2;
+        var max = document.documentElement.clientWidth - box.width - 8;
+        if (left > max) left = max;
+        if (left < 8) left = 8;
+        var top = r.top - box.height - 8;
+        if (top < 8) top = r.bottom + 8;
+        t.style.left = Math.round(left) + 'px';
+        t.style.top = Math.round(top) + 'px';
+        t.classList.add('visible');
+    }
+
+    function hide() {
+        if (!tip) return;
+        tip.classList.remove('visible');
+        tip.hidden = true;
+    }
+
+    refs.forEach(function (el) {
+        el.dataset.tip = el.getAttribute('title');
+        el.removeAttribute('title');
+        el.addEventListener('mouseenter', function () { show(el); });
+        el.addEventListener('focus', function () { show(el); });
+        el.addEventListener('mouseleave', hide);
+        el.addEventListener('blur', hide);
+    });
+
+    window.addEventListener('scroll', hide, true);
+    window.addEventListener('resize', hide);
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') hide();
+    });
+}());

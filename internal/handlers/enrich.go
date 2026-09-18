@@ -45,9 +45,22 @@ func (a *App) HandleEnrichPage(c *fiber.Ctx) error {
 		}
 	}
 
+	staleSPF, err := database.ListStaleSPFDomains(a.DB, now.Add(-spfCacheTTL).Unix())
+	if err != nil {
+		return err
+	}
+	totalSPF, err := database.CountSPFDomains(a.DB)
+	if err != nil {
+		return err
+	}
+
 	status := a.EnrichWorker.Status()
 	flashKind, flashMsg := getFlash(c)
 	return c.Render("enrich", fiber.Map{
+		"StaleSPF":          len(staleSPF),
+		"TotalSPF":          totalSPF,
+		"EnrichSPFDone":     status.SPFDone,
+		"EnrichSPFTotal":    status.SPFTotal,
 		"Title":             "Enrich — DMARC Reporter",
 		"Theme":             getTheme(c),
 		"ActivePage":        "enrich",

@@ -13,6 +13,8 @@
       <a href="/reports/dmarc"  style="color:#7a3055;text-decoration:none;">Reports</a>
       <a href="/domains"  style="color:#7a3055;text-decoration:none;">Domains</a>
       <a href="/sources"  style="color:#7a3055;text-decoration:none;">Senders</a>
+      <a href="/reporters" style="color:#7a3055;text-decoration:none;">Reporters</a>
+      <a href="/alerts" style="color:#7a3055;text-decoration:none;">Alerts</a>
       <a href="/tlsrpt"   style="color:#7a3055;text-decoration:none;">TLS</a>
       <a href="/accounts" style="color:#7a3055;text-decoration:none;">Accounts</a>
       <a href="/help"     style="color:#7a3055;text-decoration:none;">Help</a>
@@ -103,6 +105,18 @@
             <div style="font-family:'Playfair Display',serif;font-style:italic;font-weight:700;font-size:36px;line-height:1;color:#c8003a;margin-top:8px;"><a href="/sources?disposition=reject" style="color:#c8003a;text-decoration:none;">{{commaN .Stats.Rejected}}</a></div>
             <div style="font-size:12px;color:#a06080;margin-top:6px;">not on the list</div>
           </div>
+        </div>
+
+        <!-- Analytics: KPIs, matrix, enforcement, attention -->
+        <div style="background:#fff;border:1.5px solid #ffd1e3;border-radius:22px;padding:20px 24px;box-shadow:0 6px 20px rgba(255,45,139,.06);">
+          <div style="font-family:'Playfair Display',serif;font-style:italic;font-size:22px;color:#5a1837;margin-bottom:2px;">Alignment &amp; enforcement</div>
+          <div style="font-size:12px;color:#a06080;margin-bottom:14px;">Who actually authenticated, and what receivers did about the rest</div>
+          {{template "partials/ax_kpis" .}}
+          <div class="ax grid even-col">
+            <div class="card">{{template "partials/ax_matrix" .}}</div>
+            <div class="card">{{template "partials/ax_enforcement" .}}</div>
+          </div>
+          <div class="ax card mt">{{template "partials/ax_attention" .}}</div>
         </div>
 
         <!-- Trend chart -->

@@ -324,3 +324,13 @@ tr.row-fail td { background: rgba(107,31,36,0.06); }
 /* ── Dl ── */
 dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; }
 dt { font-family: var(--b-font-display); font-style: italic; font-weight: 500; color: var(--b-muted); font-size: 12px; }
+
+/* ── Analytics component palette (see static/css/analytics.css) ── */
+:root {
+    --ax-bg:#f6f1e7; --ax-surface:#fbf6ec; --ax-surface-2:#f2ead8; --ax-border:#d8cfb7;
+    --ax-text:#1a1a1a; --ax-dim:#6b5e3c; --ax-accent:#0e2a4a; --ax-accent-ink:#f6f1e7;
+    --ax-pass:#22813a; --ax-warn:#b08d3e; --ax-fail:#6b1f24; --ax-neutral:#8a7f61;
+    --ax-pass-bg:rgba(34,129,58,.10); --ax-warn-bg:rgba(176,141,62,.12); --ax-fail-bg:rgba(107,31,36,.09); --ax-neutral-bg:rgba(138,127,97,.12);
+    --ax-font-d:'Cormorant Garamond',Georgia,serif; --ax-font-b:'Source Serif 4',Georgia,serif; --ax-font-m:'Source Serif 4',Georgia,serif;
+    --ax-radius:3px; --ax-uc:none;
+}

@@ -4,33 +4,46 @@
     <select name="period" data-autosubmit style="width:auto;margin:0;">
         {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
     </select>
+    {{if .Detail}}<span class="ax"><span class="badge {{patternClass .Detail.Row.Pattern}}">{{patternLabel .Detail.Row.Pattern}}</span>{{if .Detail.Row.IsNew}}<span class="newsrc-badge">NEW THIS PERIOD</span>{{end}}</span>{{end}}
 </form>
 
-{{if .IPInfo}}
-<article class="ip-info-card">
-    <header>IP Intelligence</header>
-    <dl class="ip-info-grid">
-        {{if .IPInfo.RDNS}}
-        <dt>Reverse DNS</dt><dd>{{.IPInfo.RDNS}}</dd>
-        {{end}}
-        {{if .IPInfo.WhoisOrg}}
-        <dt>Organization</dt><dd>{{.IPInfo.WhoisOrg}}</dd>
-        {{end}}
-        {{if .IPInfo.WhoisNet}}
-        <dt>Network</dt><dd>{{.IPInfo.WhoisNet}}</dd>
-        {{end}}
-        {{if .IPInfo.WhoisCIDR}}
-        <dt>Range / CIDR</dt><dd>{{.IPInfo.WhoisCIDR}}</dd>
-        {{end}}
-        {{if .IPInfo.WhoisCountry}}
-        <dt>Country</dt><dd>{{.IPInfo.WhoisCountry}}</dd>
-        {{end}}
-        {{if .IPInfo.WhoisAbuse}}
-        <dt>Abuse Contact</dt><dd><a href="mailto:{{.IPInfo.WhoisAbuse}}">{{.IPInfo.WhoisAbuse}}</a></dd>
-        {{end}}
+<div class="ax grid even-col mb">
+  <div class="card">
+    <div class="section-head"><h2>Label &amp; classification</h2><span class="section-sub">saved for this IP, shown everywhere</span></div>
+    <form method="POST" action="/api/labels/{{.IP}}">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <input type="hidden" name="redirect" value="{{.CurrentPath}}">
+      <div class="inline-edit" style="margin-bottom:8px;">
+        <input type="text" name="label" value="{{.Label.Label}}" placeholder="e.g. Google Workspace" maxlength="120" style="flex:1;min-width:160px;">
+        <select name="classification">
+          <option value="">(no override)</option>
+          {{range .Classifications}}<option value="{{.}}"{{if eq . $.Label.Classification}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </div>
+      <textarea class="note-area" name="notes" maxlength="2000" placeholder="Add a note for your team…">{{.Label.Notes}}</textarea>
+      <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span class="footnote" style="margin:0;">known_good → healthy · forwarder → forwarder · suspicious → spoof suspect · unknown = keep computed pattern</span>
+        <button type="submit" class="small-btn primary">Save</button>
+      </div>
+    </form>
+  </div>
+
+  {{if .IPInfo}}
+  <div class="card">
+    <div class="section-head"><h2>IP intelligence</h2><span class="section-sub">reverse DNS &amp; WHOIS (cached)</span></div>
+    <dl class="kv">
+        {{if .IPInfo.RDNS}}<dt>Reverse DNS</dt><dd>{{.IPInfo.RDNS}}</dd>{{end}}
+        {{if .IPInfo.WhoisOrg}}<dt>Organization</dt><dd>{{.IPInfo.WhoisOrg}}</dd>{{end}}
+        {{if .IPInfo.WhoisNet}}<dt>Network</dt><dd>{{.IPInfo.WhoisNet}}</dd>{{end}}
+        {{if .IPInfo.WhoisCIDR}}<dt>Range / CIDR</dt><dd>{{.IPInfo.WhoisCIDR}}</dd>{{end}}
+        {{if .IPInfo.WhoisASN}}<dt>Origin AS</dt><dd>{{.IPInfo.WhoisASN}}</dd>{{end}}
+        {{if .IPInfo.WhoisCountry}}<dt>Country</dt><dd>{{.IPInfo.WhoisCountry}}</dd>{{end}}
+        {{if .IPInfo.WhoisAbuse}}<dt>Abuse Contact</dt><dd><a href="mailto:{{.IPInfo.WhoisAbuse}}">{{.IPInfo.WhoisAbuse}}</a></dd>{{end}}
+        {{if not (or .IPInfo.RDNS .IPInfo.WhoisOrg .IPInfo.WhoisCountry)}}<dt>Status</dt><dd>not resolved yet — run <a href="/enrich">Enrich</a></dd>{{end}}
     </dl>
-</article>
-{{end}}
+  </div>
+  {{end}}
+</div>
 
 <div class="kpi-grid">
     <article class="kpi-card">
@@ -52,7 +65,60 @@
     </article>
 </div>
 
+{{if .Detail}}
+{{with .Detail}}
+<div class="ax grid even-col mb">
+  <div class="card">
+    <div class="section-head"><h2>Authentication matrix <span class="subtle">{{metric "S1"}}</span></h2></div>
+    <div class="matrix">
+      <div class="matrix-cell both"><div class="m-title">Both aligned</div><span class="m-num">{{commaN .Row.BothPass}}</span><span class="m-share">{{pct1 (share .Row.BothPass .Row.TotalMessages)}}%</span></div>
+      <div class="matrix-cell dkim"><div class="m-title">DKIM only</div><span class="m-num">{{commaN .Row.DKIMOnly}}</span><span class="m-share">{{pct1 (share .Row.DKIMOnly .Row.TotalMessages)}}%</span></div>
+      <div class="matrix-cell spf"><div class="m-title">SPF only</div><span class="m-num">{{commaN .Row.SPFOnly}}</span><span class="m-share">{{pct1 (share .Row.SPFOnly .Row.TotalMessages)}}%</span></div>
+      <div class="matrix-cell neither"><div class="m-title">Neither</div><span class="m-num">{{commaN .Row.Neither}}</span><span class="m-share">{{pct1 (share .Row.Neither .Row.TotalMessages)}}%</span></div>
+    </div>
+    <dl class="kv mt">
+      <dt>Raw DKIM pass</dt><dd>{{commaN .Row.RawDKIMPass}} msgs with ≥1 passing signature</dd>
+      <dt>Raw SPF pass</dt><dd>{{commaN .Row.RawSPFPass}} msgs with a passing SPF check</dd>
+      <dt>Disposition</dt><dd>none {{commaN .Row.DispNone}} · quarantine {{commaN .Row.DispQuarantine}} · reject {{commaN .Row.DispReject}}</dd>
+      <dt>First / last seen</dt><dd>{{unixTime .Row.FirstSeen}} → {{unixTime .Row.LastSeen}}</dd>
+      <dt>Reporters</dt><dd>{{.Row.Reporters}}</dd>
+    </dl>
+  </div>
+  <div class="card">
+    <div class="section-head"><h2>Pass / fail over time</h2><span class="section-sub">{{$.PeriodLabel}}</span></div>
+    <div style="position:relative;height:200px;"><canvas id="domain-trend-chart"></canvas></div>
+    <script type="application/json" id="domain-trend-data">{{$.TimelineData}}</script>
+  </div>
+</div>
+
+<div class="ax grid three-col mb">
+  <div class="card">
+    <div class="u-label" style="margin-bottom:8px;">Selectors used</div>
+    {{if .Selectors}}<div class="tag-list">{{range .Selectors}}<span class="tag" title="{{.Passed}} of {{.Messages}} passed">{{.Selector}} <span class="subtle">({{.Domain}})</span></span>{{end}}</div>{{else}}<span class="subtle">no DKIM signatures reported</span>{{end}}
+  </div>
+  <div class="card">
+    <div class="u-label" style="margin-bottom:8px;">header_from domains</div>
+    <div class="tag-list">{{range .HeaderFroms}}<a class="tag" href="/domains/{{.Value}}">{{.Value}} <span class="subtle">{{commaN .Messages}}</span></a>{{end}}</div>
+  </div>
+  <div class="card">
+    <div class="u-label" style="margin-bottom:8px;">envelope_from domains</div>
+    <div class="tag-list">
+      {{range .EnvelopeFroms}}{{if eq .Value "<>"}}<span class="tag fail">&lt;&gt; null sender <span class="subtle">{{commaN .Messages}}</span></span>{{else if eq .Value ""}}<span class="tag">(none reported) <span class="subtle">{{commaN .Messages}}</span></span>{{else}}<span class="tag">{{.Value}} <span class="subtle">{{commaN .Messages}}</span></span>{{end}}{{end}}
+    </div>
+  </div>
+</div>
+
+<div class="ax card mb">
+  <div class="u-label" style="margin-bottom:8px;">Reporters who saw this source</div>
+  <div class="tag-list">{{range .Reporters}}<a class="tag" href="/reports/dmarc?org_name={{.OrgName}}">{{.OrgName}} <span class="subtle">{{commaN .Messages}} msgs · {{.Reports}} reports</span></a>{{end}}</div>
+</div>
+{{end}}
+{{else}}
+<div class="ax card mb"><div class="empty-state"><div class="glyph">◌</div>No records for this IP in {{.PeriodLabel}}.</div></div>
+{{end}}
+
 {{if .Records}}
+<h2>Recent records</h2>
 <table>
     <thead>
         <tr>

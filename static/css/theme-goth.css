@@ -335,3 +335,13 @@ dt { font-weight: bold; color: var(--g-muted); font-size: 11px; letter-spacing: 
     position: fixed; inset: 0; pointer-events: none; z-index: 100;
     background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 1px, transparent 1px 3px);
 }
+
+/* ── Analytics component palette (see static/css/analytics.css) ── */
+:root {
+    --ax-bg:#0a0a0b; --ax-surface:#101012; --ax-surface-2:#161618; --ax-border:#232327;
+    --ax-text:#d9d5cb; --ax-dim:#847f72; --ax-accent:#c1121f; --ax-accent-ink:#0a0a0b;
+    --ax-pass:#6fa473; --ax-warn:#c7ab55; --ax-fail:#e0475a; --ax-neutral:#847f72;
+    --ax-pass-bg:rgba(111,164,115,.12); --ax-warn-bg:rgba(199,171,85,.12); --ax-fail-bg:rgba(224,71,90,.12); --ax-neutral-bg:rgba(132,127,114,.14);
+    --ax-font-d:'Oswald',sans-serif; --ax-font-b:'IBM Plex Mono',monospace; --ax-font-m:'IBM Plex Mono',monospace;
+    --ax-radius:0px; --ax-uc:uppercase;
+}

@@ -136,7 +136,7 @@ func TestEnrichWorkerFinishOrdersStatusBeforePublish(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		w.finish(3, 4, "")
+		w.finish(3, 4, 0, "")
 		close(done)
 	}()
 

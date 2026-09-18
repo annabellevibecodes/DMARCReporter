@@ -8,12 +8,13 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 
 	"github.com/annabellevibecodes/dmarcreporter/internal/audit"
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
-	"github.com/annabellevibecodes/dmarcreporter/internal/imap"
+	"github.com/annabellevibecodes/dmarcreporter/internal/importer"
 	"github.com/annabellevibecodes/dmarcreporter/internal/parser"
 )
 
@@ -29,7 +30,23 @@ type folderList struct {
 }
 
 type messageStub struct {
-	ID string `json:"id"`
+	ID               string `json:"id"`
+	ReceivedDateTime string `json:"receivedDateTime"`
+}
+
+// receivedUnix parses the Graph receivedDateTime (RFC 3339) into Unix seconds;
+// 0 when absent or unparseable.
+func (m messageStub) receivedUnix() int64 {
+	if m.ReceivedDateTime == "" {
+		return 0
+	}
+	t, err := time.Parse(time.RFC3339Nano, m.ReceivedDateTime)
+	if err != nil {
+		if t, err = time.Parse(time.RFC3339, m.ReceivedDateTime); err != nil {
+			return 0
+		}
+	}
+	return t.Unix()
 }
 
 type messageList struct {
@@ -98,13 +115,13 @@ func resolveProcessedFolder(ctx context.Context, token, mailbox, parentFolderID,
 	return created.ID, nil
 }
 
-// listCandidateMessages returns the IDs of messages in folderID that carry
-// at least one attachment, following pagination.
-func listCandidateMessages(ctx context.Context, token, mailbox, folderID string) ([]string, error) {
-	var ids []string
+// listCandidateMessages returns the messages in folderID that carry at least
+// one attachment (id + received time), following pagination.
+func listCandidateMessages(ctx context.Context, token, mailbox, folderID string) ([]messageStub, error) {
+	var msgs []messageStub
 	query := encodeQuery(map[string]string{
 		"$filter": "hasAttachments eq true",
-		"$select": "id",
+		"$select": "id,receivedDateTime",
 		"$top":    "50",
 	})
 	next := fmt.Sprintf("%s/mailFolders/%s/messages?%s", userPath(mailbox), url.PathEscape(folderID), query)
@@ -113,23 +130,27 @@ func listCandidateMessages(ctx context.Context, token, mailbox, folderID string)
 		if err := doJSON(ctx, token, "GET", next, nil, &ml); err != nil {
 			return nil, fmt.Errorf("list messages: %w", err)
 		}
-		for _, m := range ml.Value {
-			ids = append(ids, m.ID)
-		}
+		msgs = append(msgs, ml.Value...)
 		next = ml.NextLink
+		// Never send the bearer token anywhere but the Graph API, whatever
+		// the continuation link in the response says.
+		if next != "" && !strings.HasPrefix(next, baseURL+"/") {
+			return nil, fmt.Errorf("list messages: refusing to follow @odata.nextLink outside %s", baseURL)
+		}
 	}
-	return ids, nil
+	return msgs, nil
 }
 
-// fetchMessageAttachments downloads the report attachments (if any) of one message.
-func fetchMessageAttachments(ctx context.Context, token, mailbox, messageID string) ([]imap.Attachment, error) {
+// fetchMessageAttachments downloads the report attachments (if any) of one
+// message, stamping each with receivedAt.
+func fetchMessageAttachments(ctx context.Context, token, mailbox, messageID string, receivedAt int64) ([]importer.Attachment, error) {
 	listURL := fmt.Sprintf("%s/messages/%s/attachments", userPath(mailbox), url.PathEscape(messageID))
 	var al attachmentList
 	if err := doJSON(ctx, token, "GET", listURL, nil, &al); err != nil {
 		return nil, fmt.Errorf("list attachments: %w", err)
 	}
 
-	var out []imap.Attachment
+	var out []importer.Attachment
 	for _, att := range al.Value {
 		if att.Type != "#microsoft.graph.fileAttachment" {
 			continue
@@ -163,7 +184,7 @@ func fetchMessageAttachments(ctx context.Context, token, mailbox, messageID stri
 			audit.Debug("graph: message %s attachment %q exceeds %d byte limit, skipping", messageID, att.Name, maxAttachmentSize)
 			continue
 		}
-		out = append(out, imap.Attachment{Filename: att.Name, Data: data})
+		out = append(out, importer.Attachment{Filename: att.Name, Data: data, ReceivedAt: receivedAt})
 	}
 	return out, nil
 }
@@ -179,34 +200,35 @@ func moveMessage(ctx context.Context, token, mailbox, messageID, destFolderID st
 // been examined before, extracts report attachments, moves messages carrying
 // reports to a processed child folder, and records report-free messages so
 // they are never re-downloaded.
-func FetchReports(ctx context.Context, token string, db *sqlx.DB, accountID int64, mailbox, folderID, processedFolderName string) ([]imap.Attachment, error) {
+func FetchReports(ctx context.Context, token string, db *sqlx.DB, accountID int64, mailbox, folderID, processedFolderName string) ([]importer.Attachment, error) {
 	seen, err := database.GetSeenGraphIDs(db, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("load seen message ids: %w", err)
 	}
 
-	candidateIDs, err := listCandidateMessages(ctx, token, mailbox, folderID)
+	candidates, err := listCandidateMessages(ctx, token, mailbox, folderID)
 	if err != nil {
 		return nil, err
 	}
-	var unseen []string
-	for _, id := range candidateIDs {
-		if !seen[id] {
-			unseen = append(unseen, id)
+	var unseen []messageStub
+	for _, m := range candidates {
+		if !seen[m.ID] {
+			unseen = append(unseen, m)
 		}
 	}
-	audit.Debug("graph: %d message(s) with attachments, %d not yet examined", len(candidateIDs), len(unseen))
+	audit.Debug("graph: %d message(s) with attachments, %d not yet examined", len(candidates), len(unseen))
 	if len(unseen) == 0 {
 		return nil, nil
 	}
 
 	var processedFolderID string
-	var attachments []imap.Attachment
+	var attachments []importer.Attachment
 	var noReport []string
 	moved := 0
 
-	for _, msgID := range unseen {
-		atts, err := fetchMessageAttachments(ctx, token, mailbox, msgID)
+	for _, msg := range unseen {
+		msgID := msg.ID
+		atts, err := fetchMessageAttachments(ctx, token, mailbox, msgID, msg.receivedUnix())
 		if err != nil {
 			audit.Debug("graph: message %s: %v", msgID, err)
 			continue

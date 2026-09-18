@@ -1,0 +1,81 @@
+<h1>Help &amp; Reference <small style="font-size:0.8rem;font-weight:normal;color:var(--pico-muted-color);">&middot; {{.HelpTitle}}</small></h1>
+<p style="color:var(--pico-muted-color);">{{.HelpBlurb}}</p>
+
+{{template "partials/help_nav" .}}
+
+<nav style="margin-bottom:2rem;"><small><a href="#bimi">BIMI</a> &middot; <a href="#mta-sts">MTA-STS</a> &middot; <a href="#tlsrpt">TLS-RPT</a></small></nav>
+
+<!-- BIMI -->
+<article id="bimi">
+  <header><strong>BIMI — Brand Indicators for Message Identification</strong></header>
+  <p>
+    BIMI is an emerging standard that allows domain owners to display a verified brand logo
+    next to their emails in supporting mail clients (Gmail, Apple Mail, Yahoo Mail, etc.).
+    It requires a valid DMARC policy of <code>quarantine</code> or <code>reject</code>.
+  </p>
+  <p><strong>DNS record:</strong></p>
+  <pre><code>default._bimi.example.com  TXT  "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/cert.pem;"</code></pre>
+  <p><strong>Key tags:</strong></p>
+  <table>
+    <thead><tr><th>Tag</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>v</code></td><td>Version — always <code>BIMI1</code></td></tr>
+      <tr><td><code>l</code></td><td>URL of the SVG logo (must be a square SVG Tiny PS file)</td></tr>
+      <tr><td><code>a</code></td><td>URL of a Verified Mark Certificate (VMC) — required by most major providers to display the logo</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Without a VMC (issued by an accredited Certificate Authority), most mail clients will not
+    display the BIMI logo even if the record is present.
+  </p>
+</article>
+
+<!-- MTA-STS -->
+<article id="mta-sts">
+  <header><strong>MTA-STS — Mail Transfer Agent Strict Transport Security</strong></header>
+  <p>
+    MTA-STS is a mechanism that allows domains to declare that inbound SMTP connections must
+    use TLS and that the TLS certificate must be valid. It prevents downgrade attacks where
+    an attacker strips TLS from a mail connection.
+  </p>
+  <p><strong>How it works:</strong></p>
+  <ol>
+    <li>Publish a DNS record: <code>_mta-sts.example.com TXT "v=STSv1; id=20240101000000Z;"</code></li>
+    <li>Host a policy file at <code>https://mta-sts.example.com/.well-known/mta-sts.txt</code>
+        listing your MX hosts and the enforcement mode.</li>
+    <li>Sending servers that support MTA-STS will fetch and cache your policy and enforce TLS
+        when delivering mail to your domain.</li>
+  </ol>
+  <p><strong>Policy modes:</strong></p>
+  <table>
+    <thead><tr><th>Mode</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td><code>enforce</code></td><td>Sending server must deliver over valid TLS or fail the delivery</td></tr>
+      <tr><td><code>testing</code></td><td>Policy is observed but failures are only reported, not enforced</td></tr>
+      <tr><td><code>none</code></td><td>Policy is being withdrawn</td></tr>
+    </tbody>
+  </table>
+  <p>
+    The <code>id</code> tag in the DNS record acts as a cache-busting mechanism — change it
+    whenever you update the policy file to prompt sending servers to refresh their cached copy.
+  </p>
+</article>
+
+<!-- TLS-RPT -->
+<article id="tlsrpt">
+  <header><strong>TLS-RPT — SMTP TLS Reporting</strong></header>
+  <p>
+    TLS-RPT (RFC 8460) is a companion standard to MTA-STS. Where DMARC reports tell you whether
+    incoming mail claiming to be from your domain authenticated correctly, TLS-RPT reports tell you
+    whether senders were able to establish secure (TLS) connections <em>to</em> your mail servers at
+    all. They arrive as JSON documents in the same mailbox as DMARC reports and are parsed and
+    stored automatically.
+  </p>
+  <p><strong>DNS record:</strong></p>
+  <pre><code>_smtp._tls.example.com  TXT  "v=TLSRPTv1; rua=mailto:tls-reports@example.com;"</code></pre>
+  <p>
+    View imported reports on the <a href="/tlsrpt">TLS Reports</a> page — it shows total successful
+    and failed sessions per reporter and period. A rising failure count usually points to an expiring
+    or misconfigured TLS certificate, or an MTA-STS policy that no longer matches your MX records.
+  </p>
+</article>

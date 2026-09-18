@@ -4,6 +4,8 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net"
+	"strings"
 
 	"github.com/annabellevibecodes/dmarcreporter/internal/models"
 )
@@ -35,5 +37,27 @@ func ParseXML(r io.Reader) (*models.Feedback, error) {
 	if fb.ReportMetadata.ReportID == "" {
 		return nil, fmt.Errorf("invalid DMARC report: missing report_id")
 	}
+	normalizeRecords(&fb)
 	return &fb, nil
+}
+
+// normalizeRecords drops records whose source_ip is not an IP address and
+// clamps negative message counts. Report content is attacker-controlled
+// (anyone can mail a report to the monitored mailbox), and source_ip is later
+// handed to reverse-DNS/WHOIS lookups and used as a URL path segment, so only
+// well-formed addresses are stored. Whitespace padding is tolerated.
+func normalizeRecords(fb *models.Feedback) {
+	kept := fb.Records[:0]
+	for _, rec := range fb.Records {
+		ip := net.ParseIP(strings.TrimSpace(rec.Row.SourceIP))
+		if ip == nil {
+			continue
+		}
+		rec.Row.SourceIP = ip.String()
+		if rec.Row.Count < 0 {
+			rec.Row.Count = 0
+		}
+		kept = append(kept, rec)
+	}
+	fb.Records = kept
 }

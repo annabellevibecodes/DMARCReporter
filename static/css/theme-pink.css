@@ -337,3 +337,13 @@ tr.row-fail td { background: rgba(200,0,58,0.06); }
 /* ── Dl ── */
 dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; }
 dt { font-weight: 600; color: var(--p-label); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+
+/* ── Analytics component palette (see static/css/analytics.css) ── */
+:root {
+    --ax-bg:#fff5f9; --ax-surface:#ffffff; --ax-surface-2:#fff0f6; --ax-border:#ffd9e9;
+    --ax-text:#4a1530; --ax-dim:#a1637f; --ax-accent:#ff2d8b; --ax-accent-ink:#ffffff;
+    --ax-pass:#0d8a3a; --ax-warn:#9b6b00; --ax-fail:#c8003a; --ax-neutral:#b8438a;
+    --ax-pass-bg:#eafbf0; --ax-warn-bg:#fff6df; --ax-fail-bg:#ffe6ee; --ax-neutral-bg:#f6e9f0;
+    --ax-font-d:'Playfair Display',Georgia,serif; --ax-font-b:'Manrope',sans-serif; --ax-font-m:'Manrope',sans-serif;
+    --ax-radius:16px; --ax-uc:none;
+}

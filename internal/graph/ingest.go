@@ -10,7 +10,7 @@ import (
 
 	"github.com/annabellevibecodes/dmarcreporter/internal/audit"
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
-	"github.com/annabellevibecodes/dmarcreporter/internal/imap"
+	"github.com/annabellevibecodes/dmarcreporter/internal/importer"
 )
 
 // defaultFolder is the Graph well-known folder name used when an account
@@ -39,7 +39,8 @@ func IngestAccount(db *sqlx.DB, acc database.Account, token string) (int, error)
 	if err != nil {
 		return 0, fmt.Errorf("graph fetch: %w", err)
 	}
-	return imap.SaveAttachments(db, acc.Name, attachments)
+	res, err := importer.SaveAttachments(db, database.IngestSourceGraph, acc.Name, attachments)
+	return res.Imported, err
 }
 
 // TestAccount verifies connectivity, authentication, and folder access

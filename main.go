@@ -14,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/template/html/v2"
 
+	"github.com/annabellevibecodes/dmarcreporter/internal/alerts"
 	"github.com/annabellevibecodes/dmarcreporter/internal/audit"
 	"github.com/annabellevibecodes/dmarcreporter/internal/config"
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
@@ -62,26 +63,7 @@ func main() {
 	worker.StartScheduler(cfg.FetchInterval)
 
 	engine := html.New("./views", ".html")
-	engine.AddFunc("add", func(a, b int) int { return a + b })
-	engine.AddFunc("unixTime", func(ts int64) string {
-		return time.Unix(ts, 0).UTC().Format("2006-01-02")
-	})
-	engine.AddFunc("pct", func(f float64) string {
-		return fmt.Sprintf("%.1f", f*100)
-	})
-	engine.AddFunc("splitComma", func(s string) []string {
-		if s == "" {
-			return nil
-		}
-		return strings.Split(s, ",")
-	})
-	engine.AddFunc("commaN", func(n int64) string {
-		s := fmt.Sprintf("%d", n)
-		for i := len(s) - 3; i > 0; i -= 3 {
-			s = s[:i] + "," + s[i:]
-		}
-		return s
-	})
+	engine.AddFuncMap(handlers.TemplateFuncs())
 
 	app := fiber.New(fiber.Config{
 		Views:        engine,
@@ -105,6 +87,9 @@ func main() {
 
 	// Authentication — enabled unless AUTH_DISABLED=true.
 	if !cfg.AuthDisabled {
+		// Lock out an IP after repeated 401s so the single admin password
+		// cannot be brute-forced. Registered before basicauth so it sees the 401.
+		app.Use(handlers.AuthThrottle(cfg.AuthFailMax, cfg.AuthFailWindow))
 		app.Use(basicauth.New(basicauth.Config{
 			Users: map[string]string{cfg.AuthUser: cfg.AuthPassword},
 		}))
@@ -144,6 +129,9 @@ func main() {
 	a := &handlers.App{DB: db, Cfg: cfg, Worker: worker, EnrichWorker: handlers.NewEnrichWorker(db)}
 	// Keep DMARC/BIMI/MTA-STS DNS checks fresh without blocking page loads.
 	a.StartDomainCheckRefresher(6 * time.Hour)
+	// Time-based alert rules (silent reporters, missing selectors, …) need a
+	// ticker; ingest runs also evaluate after importing new reports.
+	alerts.StartScheduler(db, cfg, cfg.AlertEvalInterval)
 
 	app.Get("/theme", a.HandleSetTheme)
 	app.Get("/", a.HandleDashboard)
@@ -205,6 +193,9 @@ func main() {
 	detailLimiter := limiter.New(limiter.Config{Max: 30, Expiration: 1 * time.Minute})
 	app.Get("/domains/:domain", detailLimiter, a.HandleDomainDetail)
 	app.Get("/help", a.HandleHelpPage)
+	app.Get("/help/:section", a.HandleHelpPage)
+	app.Get("/reporters", a.HandleReportersPage)
+	app.Get("/alerts", a.HandleAlertsPage)
 	app.Get("/sources", a.HandleSourcesList)
 	app.Get("/sources/:ip", detailLimiter, a.HandleSourceDetail)
 	app.Get("/recipients/:domain", detailLimiter, a.HandleRecipientDetail)
@@ -214,6 +205,27 @@ func main() {
 	app.Get("/api/failure-modes", apiLimiter, a.HandleAPIFailureModes)
 	app.Get("/api/domain-trend", apiLimiter, a.HandleAPIDomainTrend)
 	app.Get("/api/top-failing-sources", apiLimiter, a.HandleAPITopFailingSources)
+	// Analytics extension (all honour period / domain / ef / compare=1).
+	app.Get("/api/overview", apiLimiter, a.HandleAPIOverview)
+	app.Get("/api/auth-matrix", apiLimiter, a.HandleAPIAuthMatrix)
+	app.Get("/api/sources", apiLimiter, a.HandleAPISources)
+	app.Get("/api/sources/:ip", apiLimiter, a.HandleAPISourceDetail)
+	app.Get("/api/new-sources", apiLimiter, a.HandleAPINewSources)
+	app.Get("/api/spoof", apiLimiter, a.HandleAPISpoof)
+	app.Post("/api/labels/:ip", apiLimiter, a.HandleAPILabelUpsert)
+	app.Get("/api/auth", apiLimiter, a.HandleAPIAuth)
+	app.Get("/api/policy", apiLimiter, a.HandleAPIPolicy)
+	app.Post("/api/selectors/expected", apiLimiter, a.HandleAPISelectorExpected)
+	app.Get("/api/reporters", apiLimiter, a.HandleAPIReporters)
+	app.Get("/api/managed-domains", apiLimiter, a.HandleAPIManagedDomainsList)
+	app.Post("/api/managed-domains", apiLimiter, a.HandleAPIManagedDomainAdd)
+	app.Delete("/api/managed-domains", apiLimiter, a.HandleAPIManagedDomainDelete)
+	app.Post("/api/managed-domains/delete", apiLimiter, a.HandleAPIManagedDomainDelete)
+	app.Get("/api/alerts", apiLimiter, a.HandleAPIAlerts)
+	app.Post("/api/alerts/evaluate", apiLimiter, a.HandleAPIEvaluateAlerts)
+	app.Post("/api/alerts/:id/ack", apiLimiter, a.HandleAPIAlertAck)
+	app.Get("/api/health", apiLimiter, a.HandleAPIHealth)
+	app.Get("/api/health/:domain", apiLimiter, a.HandleAPIHealth)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	log.Printf("Starting DMARC Reporter on http://localhost%s", addr)

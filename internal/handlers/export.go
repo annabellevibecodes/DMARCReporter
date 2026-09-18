@@ -21,6 +21,9 @@ func (a *App) HandleExport(c *fiber.Ctx) error {
 	if domain != "" && (len(domain) > 253 || !domainReExport.MatchString(domain)) {
 		return fiber.ErrBadRequest
 	}
+	if !validPeriod(period) {
+		return fiber.ErrBadRequest
+	}
 	switch format {
 	case "csv", "xlsx", "pdf", "docx":
 	default:
@@ -28,7 +31,7 @@ func (a *App) HandleExport(c *fiber.Ctx) error {
 	}
 
 	from, to, periodLabel := parsePeriod(period)
-	rd, err := export.Fetch(a.DB, domain, from, to, periodLabel)
+	rd, err := export.FetchWithOptions(a.DB, domain, from, to, periodLabel, export.Options{PatternThresholds: a.patternThresholds()})
 	if err != nil {
 		return err
 	}

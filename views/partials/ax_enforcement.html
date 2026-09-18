@@ -1,0 +1,45 @@
+{{/* Disposition split (C6) and enforcement effectiveness (C7). Expects .Overview */}}
+<div class="ax">
+  <div class="section-head">
+    <h2>Disposition &amp; enforcement <span class="subtle">{{metric "C6"}} · {{metric "C7"}}</span></h2>
+    <span class="section-sub">what receivers actually did</span>
+  </div>
+  {{with .Overview}}
+  {{if gt .Disposition.Total 0}}
+  <div class="legend-row">
+    <span><span class="swatch" style="background:var(--ax-neutral)"></span>none {{pct0 .Disposition.NonePct}}%</span>
+    <span><span class="swatch" style="background:var(--ax-warn)"></span>quarantine {{pct0 .Disposition.QuarantinePct}}%</span>
+    <span><span class="swatch" style="background:var(--ax-fail)"></span>reject {{pct0 .Disposition.RejectPct}}%</span>
+  </div>
+  <div class="stacked-bar">
+    <div class="stacked-seg seg-none" style="width:{{widthPct .Disposition.None .Disposition.Total}}%">{{if gt .Disposition.NonePct 6.0}}{{pct0 .Disposition.NonePct}}%{{end}}</div>
+    <div class="stacked-seg seg-quarantine" style="width:{{widthPct .Disposition.Quarantine .Disposition.Total}}%">{{if gt .Disposition.QuarantinePct 6.0}}{{pct0 .Disposition.QuarantinePct}}%{{end}}</div>
+    <div class="stacked-seg seg-reject" style="width:{{widthPct .Disposition.Reject .Disposition.Total}}%">{{if gt .Disposition.RejectPct 6.0}}{{pct0 .Disposition.RejectPct}}%{{end}}</div>
+  </div>
+  <div class="enforce-line">
+    {{if or (eq .Enforcement.Policy "none") (eq .Enforcement.Policy "")}}
+      {{if gt .Enforcement.Failing 0}}
+      If you moved to <b>p=reject</b> today, an estimated <b>{{commaN .Enforcement.Failing}}</b> messages (<b>{{pct1 .Enforcement.WouldBlockPct}}%</b>) would be rejected, based on current failure patterns. <span class="subtle">{{metric "P6"}}</span>
+      {{else}}
+      Monitoring only (<b>p=none</b>) and nothing is failing — enforcement would block nothing today.
+      {{end}}
+    {{else}}
+      {{if .Enforcement.Rate}}
+      <b>{{pct1 (deref .Enforcement.Rate)}}%</b> of failing mail was blocked this period
+      ({{commaN .Enforcement.Enforced}} of {{commaN .Enforcement.Failing}})
+      {{else}}
+      No failing mail in this period — nothing for receivers to enforce against
+      {{end}}
+      · published policy <span class="tag" style="margin-left:4px;">p={{.Enforcement.Policy}}</span>
+    {{end}}
+  </div>
+  {{if .UnexplainedOverrides}}{{if gt .UnexplainedOverrides.Records 0}}
+  <div class="footnote"><b>{{commaN .UnexplainedOverrides.Messages}}</b> failing messages were delivered more leniently than the published policy with no <code>&lt;reason&gt;</code> given <span class="subtle">{{metric "C8"}}</span>
+    {{if .UnexplainedOverrides.Sources}}— top source <a href="/sources/{{(index .UnexplainedOverrides.Sources 0).SourceIP}}">{{(index .UnexplainedOverrides.Sources 0).SourceIP}}</a>{{end}}.
+  </div>
+  {{end}}{{end}}
+  {{else}}
+  <div class="empty-state"><div class="glyph">◌</div>No messages in this window.</div>
+  {{end}}
+  {{end}}
+</div>

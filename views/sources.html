@@ -1,14 +1,12 @@
-<h1>Source IPs</h1>
-
-{{if .Disposition}}
-<div class="flash flash-info">Showing sources with <strong>{{.Disposition}}</strong> disposition only. <a href="/sources">Clear filter</a></div>
-{{end}}
-{{if .Country}}
-<div class="flash flash-info">Showing sources from country <strong>{{.Country}}</strong>. <a href="/sources">Clear filter</a></div>
-{{end}}
+<h1>Source IPs{{if .Domain}} <small style="font-size:0.8rem;font-weight:normal;color:var(--pico-muted-color);">for {{.Domain}}</small>{{end}}</h1>
 
 <form class="filter-form" method="get" action="/sources">
+    {{if .Domain}}<input type="hidden" name="domain" value="{{.Domain}}">{{end}}
     {{if .Disposition}}<input type="hidden" name="disposition" value="{{.Disposition}}">{{end}}
+    {{if .Country}}<input type="hidden" name="country" value="{{.Country}}">{{end}}
+    {{if .Matrix}}<input type="hidden" name="matrix" value="{{.Matrix}}">{{end}}
+    {{if .NewOnly}}<input type="hidden" name="new" value="1">{{end}}
+    {{if .Pattern}}<input type="hidden" name="pattern" value="{{.Pattern}}">{{end}}
     <div class="filter-row" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;">
         <select name="period" data-autosubmit style="width:auto;margin:0;">
             {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
@@ -19,9 +17,8 @@
             <option value="{{.}}" {{if eq . $.EnvelopeFrom}}selected{{end}}>{{.}}</option>
             {{end}}
         </select>
-        <input type="text" name="ip" value="{{.SourceIP}}" placeholder="Filter by IP" style="max-width:260px;" autocomplete="off" spellcheck="false">
+        <input type="text" name="ip" value="{{.SourceIP}}" placeholder="Filter by IP, label or rDNS" style="max-width:260px;" autocomplete="off" spellcheck="false">
         <button type="submit">Filter</button>
-        {{if or .EnvelopeFrom .SourceIP}}<a href="/sources?period={{.SelectedPeriod}}&min={{.MinMessages}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}" role="button" class="secondary outline">Clear</a>{{end}}
     </div>
     <div class="filter-row" style="display:flex;align-items:center;gap:12px;width:100%;margin-top:0.5rem;">
         <label for="min-msg-input" style="margin:0;white-space:nowrap;font-size:0.9rem;">Min. messages:</label>
@@ -30,59 +27,106 @@
     </div>
 </form>
 
+<div class="ax">
+  {{if .ActiveFilters}}
+  <div class="toolbar" style="margin-bottom:8px;">
+    <span class="subtle" style="min-width:86px;">Active filters</span>
+    {{range .ActiveFilters}}<a class="filter-chip active" href="{{.Href}}" title="Remove this filter">{{.Label}} &#10005;</a>{{end}}
+    <a class="filter-chip" href="{{.ClearAllHref}}">clear all</a>
+  </div>
+  {{end}}
+  <div class="toolbar" style="margin-bottom:6px;">
+    <span class="subtle" style="min-width:86px;">Pattern</span>
+    {{range .PatternChips}}<a class="filter-chip{{if .Active}} active{{end}}" href="{{.Href}}">{{.Label}}</a>{{end}}
+  </div>
+  <div class="toolbar" style="margin-bottom:6px;">
+    <span class="subtle" style="min-width:86px;" title="Which cell of the 2×2 aligned-authentication matrix a source has messages in">Matrix cell</span>
+    {{range .MatrixChips}}<a class="filter-chip{{if .Active}} active{{end}}" href="{{.Href}}">{{.Label}}</a>{{end}}
+  </div>
+  <div class="toolbar">
+    <span class="subtle" style="min-width:86px;">Disposition</span>
+    {{range .DispositionChips}}<a class="filter-chip{{if .Active}} active{{end}}" href="{{.Href}}">{{.Label}}</a>{{end}}
+    <span style="width:10px"></span>
+    {{if .NewChip.Disabled}}<span class="filter-chip" style="opacity:.45;cursor:not-allowed;" title="{{.NewChip.Title}}">{{.NewChip.Label}}</span>{{else}}<a class="filter-chip{{if .NewChip.Active}} active{{end}}" href="{{.NewChip.Href}}">{{.NewChip.Label}}</a>{{end}}
+    <span class="subtle" style="margin-left:auto;">{{.Total}} source{{if ne .Total 1}}s{{end}} · {{.PeriodLabel}}</span>
+  </div>
+  <div class="footnote" style="margin:6px 0 12px;">Patterns ({{metric "S3"}}): <b>healthy</b> ≥90% both aligned · <b>forwarder</b> ≥60% DKIM-only · <b>broken signing</b> ≥60% SPF-only · <b>spoof suspect</b> ≥95% neither (≥5 msgs) · otherwise <b>mixed</b>. A saved classification overrides the computed pattern.{{if .Matrix}}<br>Matrix cell <b>{{.MatrixLabel}}</b>: only sources with messages in that cell, ordered by its volume.{{end}}{{if .NewOnly}}<br><b>New in period</b>: only sources whose first-ever report falls inside the selected period ({{metric "S2"}}).{{end}}</div>
+
 {{if .Sources}}
-<table>
+  <div class="table-wrap">
+  <table class="data">
     <thead>
         <tr>
-            {{$base := printf "/sources?period=%s&min=%d" .SelectedPeriod .MinMessages}}
-            {{if .EnvelopeFrom}}{{$base = printf "%s&envelope_from=%s" $base .EnvelopeFrom}}{{end}}
-            {{if .SourceIP}}{{$base = printf "%s&ip=%s" $base .SourceIP}}{{end}}
-            {{if .Disposition}}{{$base = printf "%s&disposition=%s" $base .Disposition}}{{end}}
-            {{if .Country}}{{$base = printf "%s&country=%s" $base .Country}}{{end}}
-            <th><a href="{{$base}}&sort=ip&dir={{if and (eq $.SortBy "ip") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Source IP{{if eq $.SortBy "ip"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
-            <th>Provider</th>
-            <th><a href="{{$base}}&sort=messages&dir={{if and (eq $.SortBy "messages") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Total Messages{{if eq $.SortBy "messages"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
-            <th><a href="{{$base}}&sort=passed&dir={{if and (eq $.SortBy "passed") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Passed{{if eq $.SortBy "passed"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
-            <th><a href="{{$base}}&sort=failed&dir={{if and (eq $.SortBy "failed") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Failed{{if eq $.SortBy "failed"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
-            <th><a href="{{$base}}&sort=fail_rate&dir={{if and (eq $.SortBy "fail_rate") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Fail Rate{{if eq $.SortBy "fail_rate"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
+            {{$base := printf "/sources?%s" .BaseQuery}}
+            <th class="{{if eq $.SortBy "ip"}}sorted{{end}}"><a href="{{$base}}&amp;sort=ip&amp;dir={{if and (eq $.SortBy "ip") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Source IP{{if eq $.SortBy "ip"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
+            <th>Label</th>
+            <th>Enrichment</th>
+            <th>Pattern</th>
+            <th class="num {{if eq $.SortBy "messages"}}sorted{{end}}"><a href="{{$base}}&amp;sort=messages&amp;dir={{if and (eq $.SortBy "messages") (eq $.SortDir "desc")}}asc{{else}}desc{{end}}">Messages{{if eq $.SortBy "messages"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
+            <th class="{{if eq $.SortBy "pass_rate"}}sorted{{end}}"><a href="{{$base}}&amp;sort=pass_rate&amp;dir={{if and (eq $.SortBy "pass_rate") (eq $.SortDir "asc")}}desc{{else}}asc{{end}}">Pass rate{{if eq $.SortBy "pass_rate"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
+            <th title="both aligned / DKIM only / SPF only / neither">Matrix</th>
+            <th class="num {{if eq $.SortBy "failed"}}sorted{{end}}"><a href="{{$base}}&amp;sort=failed&amp;dir={{if and (eq $.SortBy "failed") (eq $.SortDir "desc")}}asc{{else}}desc{{end}}">Neither{{if eq $.SortBy "failed"}} {{if eq $.SortDir "asc"}}▲{{else}}▼{{end}}{{end}}</a></th>
+            <th class="num {{if eq $.SortBy "reporters"}}sorted{{end}}"><a href="{{$base}}&amp;sort=reporters&amp;dir={{if and (eq $.SortBy "reporters") (eq $.SortDir "desc")}}asc{{else}}desc{{end}}">Reporters</a></th>
+            <th class="{{if eq $.SortBy "first_seen"}}sorted{{end}}"><a href="{{$base}}&amp;sort=first_seen&amp;dir={{if and (eq $.SortBy "first_seen") (eq $.SortDir "desc")}}asc{{else}}desc{{end}}">First seen</a></th>
+            <th class="{{if eq $.SortBy "last_seen"}}sorted{{end}}"><a href="{{$base}}&amp;sort=last_seen&amp;dir={{if and (eq $.SortBy "last_seen") (eq $.SortDir "desc")}}asc{{else}}desc{{end}}">Last seen</a></th>
         </tr>
     </thead>
     <tbody>
     {{range .Sources}}
-        <tr class="{{if ge .FailRatePct 10.0}}row-fail{{else if gt .FailRatePct 0.0}}row-warn{{end}}">
-            <td><a href="/sources/{{.SourceIP}}">{{.SourceIP}}</a></td>
-            <td>{{if .Provider}}{{.Provider}}{{else}}<small>—</small>{{end}}</td>
-            <td>{{.TotalMessages}}</td>
-            <td>{{.Passed}}</td>
-            <td>{{.Failed}}</td>
+        <tr>
+            <td class="mono-cell"><a href="/sources/{{.SourceIP}}">{{.SourceIP}}</a>{{if .IsNew}}<span class="newsrc-badge">NEW</span>{{end}}</td>
             <td>
-                {{if ge .FailRatePct 10.0}}
-                <span class="badge badge-fail">{{printf "%.1f" .FailRatePct}}%</span>
-                {{else if gt .FailRatePct 0.0}}
-                <span class="badge badge-warn">{{printf "%.1f" .FailRatePct}}%</span>
-                {{else}}
-                <span class="badge badge-pass">0.0%</span>
-                {{end}}
+              {{if .Label}}<b>{{.Label}}</b>{{else}}<span class="subtle">unlabelled</span>{{end}}
+              {{if .Classification}}<div class="subtle">{{.Classification}}</div>{{end}}
+              <details class="edit">
+                <summary>✎ edit</summary>
+                <form method="POST" action="/api/labels/{{.SourceIP}}" class="inline-edit">
+                  <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+                  <input type="hidden" name="redirect" value="{{$.CurrentPath}}">
+                  <input type="text" name="label" value="{{.Label}}" placeholder="e.g. Google Workspace" maxlength="120" style="width:150px">
+                  <select name="classification">
+                    <option value="">(no override)</option>
+                    {{range $.Classifications}}<option value="{{.}}"{{if eq . $.Classification}} selected{{end}}>{{.}}</option>{{end}}
+                  </select>
+                  <button type="submit" class="small-btn primary">Save</button>
+                </form>
+              </details>
             </td>
+            <td class="subtle">{{if .Country}}{{.Country}}{{end}}{{if and .Country (or .Provider .RDNS)}} · {{end}}{{if .Provider}}{{.Provider}}{{else if .RDNS}}{{.RDNS}}{{end}}{{if .ASN}} <span class="subtle">{{.ASN}}</span>{{end}}</td>
+            <td><span class="badge {{patternClass .Pattern}}">{{patternLabel .Pattern}}</span></td>
+            <td class="num mono-cell">{{commaN .TotalMessages}}</td>
+            <td><span class="mini-bar"><span class="mini-bar-fill {{passClass .PassRate}}" style="width:{{pct0 .PassRate}}%"></span></span>{{pct0 .PassRate}}%</td>
+            <td>
+              <span class="matrix-mini" title="both {{.BothPass}} · DKIM only {{.DKIMOnly}} · SPF only {{.SPFOnly}} · neither {{.Neither}}">
+                <span class="mm-both" style="width:{{widthPct .BothPass .TotalMessages}}%"></span><span class="mm-dkim" style="width:{{widthPct .DKIMOnly .TotalMessages}}%"></span><span class="mm-spf" style="width:{{widthPct .SPFOnly .TotalMessages}}%"></span><span class="mm-neither" style="width:{{widthPct .Neither .TotalMessages}}%"></span>
+              </span>
+            </td>
+            <td class="num mono-cell">{{if gt .Neither 0}}<span style="color:var(--ax-fail)">{{commaN .Neither}}</span>{{else}}0{{end}}</td>
+            <td class="num mono-cell">{{.Reporters}}</td>
+            <td class="subtle">{{unixTime .FirstSeen}}</td>
+            <td class="subtle">{{unixTime .LastSeen}}</td>
         </tr>
     {{end}}
     </tbody>
-</table>
+  </table>
+  </div>
 {{if gt .TotalPages 1}}
 <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:1rem;">
+    {{$pq := printf "/sources?%s&%s" .BaseQuery .SortQuery}}
     {{if gt .Page 1}}
-    <a href="/sources?page={{add .Page -1}}&period={{.SelectedPeriod}}&min={{.MinMessages}}&sort={{.SortBy}}&dir={{.SortDir}}{{if .EnvelopeFrom}}&envelope_from={{.EnvelopeFrom}}{{end}}{{if .SourceIP}}&ip={{.SourceIP}}{{end}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}{{if .Country}}&country={{.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">← Prev</a>
+    <a href="{{$pq}}&page={{add .Page -1}}" role="button" class="outline secondary" style="padding:2px 10px;">← Prev</a>
     {{end}}
     {{range .PageNums}}
-    {{if eq . $.Page}}<span style="padding:2px 8px;font-weight:700;">{{.}}</span>{{else}}<a href="/sources?page={{.}}&period={{$.SelectedPeriod}}&min={{$.MinMessages}}&sort={{$.SortBy}}&dir={{$.SortDir}}{{if $.EnvelopeFrom}}&envelope_from={{$.EnvelopeFrom}}{{end}}{{if $.SourceIP}}&ip={{$.SourceIP}}{{end}}{{if $.Disposition}}&disposition={{$.Disposition}}{{end}}{{if $.Country}}&country={{$.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">{{.}}</a>{{end}}
+    {{if eq . $.Page}}<span style="padding:2px 8px;font-weight:700;">{{.}}</span>{{else}}<a href="{{$pq}}&page={{.}}" role="button" class="outline secondary" style="padding:2px 10px;">{{.}}</a>{{end}}
     {{end}}
     {{if lt .Page .TotalPages}}
-    <a href="/sources?page={{add .Page 1}}&period={{.SelectedPeriod}}&min={{.MinMessages}}&sort={{.SortBy}}&dir={{.SortDir}}{{if .EnvelopeFrom}}&envelope_from={{.EnvelopeFrom}}{{end}}{{if .SourceIP}}&ip={{.SourceIP}}{{end}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}{{if .Country}}&country={{.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">Next →</a>
-    <a href="/sources?page={{.TotalPages}}&period={{.SelectedPeriod}}&min={{.MinMessages}}&sort={{.SortBy}}&dir={{.SortDir}}{{if .EnvelopeFrom}}&envelope_from={{.EnvelopeFrom}}{{end}}{{if .SourceIP}}&ip={{.SourceIP}}{{end}}{{if .Disposition}}&disposition={{.Disposition}}{{end}}{{if .Country}}&country={{.Country}}{{end}}" role="button" class="outline secondary" style="padding:2px 10px;">Last ({{.TotalPages}})</a>
+    <a href="{{$pq}}&page={{add .Page 1}}" role="button" class="outline secondary" style="padding:2px 10px;">Next →</a>
+    <a href="{{$pq}}&page={{.TotalPages}}" role="button" class="outline secondary" style="padding:2px 10px;">Last ({{.TotalPages}})</a>
     {{end}}
     <span style="font-size:0.9rem;color:var(--pico-muted-color);margin-left:4px;">Page {{.Page}} of {{.TotalPages}} &middot; {{.Total}} senders</span>
 </div>
 {{end}}
 {{else}}
-<p>No source data yet.</p>
+<p>No source data for this filter.</p>
 {{end}}
+</div>

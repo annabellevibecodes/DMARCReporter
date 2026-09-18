@@ -1,12 +1,18 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"log"
+	"net"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
 	"github.com/annabellevibecodes/dmarcreporter/internal/ipinfo"
+	"github.com/annabellevibecodes/dmarcreporter/internal/spf"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -17,8 +23,13 @@ type EnrichStatus struct {
 	IPDone      int    `json:"ip_done"`
 	DomainTotal int    `json:"domain_total"`
 	DomainDone  int    `json:"domain_done"`
+	SPFTotal    int    `json:"spf_total"`
+	SPFDone     int    `json:"spf_done"`
 	Error       string `json:"error,omitempty"`
 }
+
+// spfCacheTTL is how long a resolved SPF expansion stays fresh.
+const spfCacheTTL = 24 * time.Hour
 
 // enrichEvent is one item pushed to SSE subscribers.
 type enrichEvent struct {
@@ -100,7 +111,7 @@ func (w *EnrichWorker) publish(name string, data any) {
 // finish marks the run as complete (success or failure) before publishing the
 // terminal event, so a subscriber that reads Status() after seeing Running is
 // guaranteed to still receive the event if they subscribed first.
-func (w *EnrichWorker) finish(ips, domains int, errMsg string) {
+func (w *EnrichWorker) finish(ips, domains, spfDomains int, errMsg string) {
 	w.mu.Lock()
 	w.status.Running = false
 	w.status.Error = errMsg
@@ -110,13 +121,13 @@ func (w *EnrichWorker) finish(ips, domains int, errMsg string) {
 		w.publish("error", map[string]string{"message": errMsg})
 		return
 	}
-	w.publish("done", map[string]any{"ips": ips, "domains": domains})
+	w.publish("done", map[string]any{"ips": ips, "domains": domains, "spf": spfDomains})
 }
 
 func (w *EnrichWorker) run() {
 	ips, err := database.ListStaleSourceIPs(w.db, time.Now().Add(-ipinfo.CacheTTL).Unix())
 	if err != nil {
-		w.finish(0, 0, err.Error())
+		w.finish(0, 0, 0, err.Error())
 		return
 	}
 	w.mu.Lock()
@@ -127,7 +138,11 @@ func (w *EnrichWorker) run() {
 	for i, ip := range ips {
 		country := ""
 		status := "ok"
-		if info, err := ipinfo.Get(w.db, ip); err != nil {
+		if net.ParseIP(ip) == nil {
+			// Rows imported before source_ip validation existed: never hand
+			// arbitrary reporter-supplied strings to rDNS / WHOIS.
+			status = "skipped"
+		} else if info, err := ipinfo.Get(w.db, ip); err != nil {
 			status = "error"
 			log.Printf("enrich: ipinfo.Get(%s): %v", ip, err)
 		} else if info != nil {
@@ -144,7 +159,7 @@ func (w *EnrichWorker) run() {
 
 	domains, err := database.ListDomains(w.db)
 	if err != nil {
-		w.finish(len(ips), 0, err.Error())
+		w.finish(len(ips), 0, 0, err.Error())
 		return
 	}
 	existingChecks, _ := database.GetAllDomainChecks(w.db)
@@ -185,7 +200,65 @@ func (w *EnrichWorker) run() {
 		})
 	}
 
-	w.finish(len(ips), len(toCheck), "")
+	// Third job: expand SPF records for every managed / reported domain so the
+	// spoof-volume split (S4) and the spoof_spike rule (X11) have data.
+	spfDomains, err := database.ListStaleSPFDomains(w.db, now.Add(-spfCacheTTL).Unix())
+	if err != nil {
+		w.finish(len(ips), len(toCheck), 0, err.Error())
+		return
+	}
+	w.mu.Lock()
+	w.status.SPFTotal = len(spfDomains)
+	w.mu.Unlock()
+	w.publish("", map[string]any{"type": "spf_start", "total": len(spfDomains)})
+
+	for i, domain := range spfDomains {
+		entry, summary := resolveSPFEntry(domain)
+		if err := database.UpsertSPFCache(w.db, entry); err != nil {
+			log.Printf("enrich: spf cache %s: %v", domain, err)
+		}
+		w.mu.Lock()
+		w.status.SPFDone = i + 1
+		w.mu.Unlock()
+		w.publish("", map[string]any{
+			"type": "spf", "domain": domain, "cidrs": len(entry.Prefixes()), "lookups": entry.Lookups,
+			"over_limit": entry.OverLimit == 1, "error": entry.Error, "summary": summary,
+			"done": i + 1, "total": len(spfDomains),
+		})
+	}
+
+	w.finish(len(ips), len(toCheck), len(spfDomains), "")
+}
+
+// resolveSPFEntry expands one domain's SPF record into a cache row.
+func resolveSPFEntry(domain string) (database.SPFCacheEntry, string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	entry := database.SPFCacheEntry{Domain: domain, CIDRs: "[]", CheckedAt: time.Now().Unix()}
+	res, err := spf.Resolve(ctx, nil, domain)
+	if err != nil {
+		entry.Error = err.Error()
+		return entry, "error: " + err.Error()
+	}
+	b, _ := json.Marshal(res.CIDRs)
+	entry.CIDRs = string(b)
+	entry.Lookups = res.Lookups
+	if res.OverLimit {
+		entry.OverLimit = 1
+	}
+	if len(res.Errors) > 0 {
+		entry.Error = strings.Join(res.Errors, "; ")
+		if len(entry.Error) > 500 {
+			entry.Error = entry.Error[:500]
+		}
+	}
+	switch {
+	case res.Record == "":
+		return entry, "no SPF record"
+	case res.OverLimit:
+		return entry, fmt.Sprintf("%d networks, over the %d-lookup limit (incomplete)", len(res.CIDRs), spf.MaxLookups)
+	}
+	return entry, fmt.Sprintf("%d networks, %d lookups", len(res.CIDRs), res.Lookups)
 }
 
 func boolToInt(b bool) int {

@@ -15,6 +15,8 @@
       <a href="/reports/dmarc"  style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">reports</a>
       <a href="/domains"  style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">domains</a>
       <a href="/sources"  style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">senders</a>
+      <a href="/reporters" style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">reporters</a>
+      <a href="/alerts" style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">alerts</a>
       <a href="/tlsrpt"   style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">tls</a>
       <a href="/accounts" style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">accounts</a>
       <a href="/help"     style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">help</a>
@@ -108,6 +110,21 @@
             <div style="font-size:11px;color:#6e6a60;font-style:italic;margin-top:4px;">not even close, sweetie</div>
           </div>
         </div>
+      </div>
+
+      <!-- §01b Analytics: matrix, enforcement, attention -->
+      <div style="padding:14px 24px;border-bottom:1px solid #1a1a1e;">
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px;">
+          <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;01b</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:18px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">Alignment &amp; enforcement</span>
+          <span style="font-size:11px;color:#6e6a60;">// who actually authenticated, and what receivers did about the rest</span>
+        </div>
+        {{template "partials/ax_kpis" .}}
+        <div class="ax grid even-col">
+          <div class="card">{{template "partials/ax_matrix" .}}</div>
+          <div class="card">{{template "partials/ax_enforcement" .}}</div>
+        </div>
+        <div class="ax card mt">{{template "partials/ax_attention" .}}</div>
       </div>
 
       <!-- §02 Chart -->

@@ -1,0 +1,59 @@
+<h1>Alerts</h1>
+<p style="color:var(--pico-muted-color);">Rules run after every import and every {{.EvalInterval}}. {{if .Delivery}}New alerts are delivered via {{if .Webhook}}webhook{{end}}{{if and .Webhook .Email}} and {{end}}{{if .Email}}email{{end}}.{{else}}No delivery channel is configured (<code>ALERT_WEBHOOK_URL</code> / <code>SMTP_HOST</code>), so alerts are only recorded here.{{end}}</p>
+
+<div class="ax">
+  <div class="toolbar">
+    {{range $s := (splitComma "open,ack,all")}}<a class="filter-chip{{if eq $s $.State}} active{{end}}" href="/alerts?state={{$s}}&amp;severity={{$.Severity}}{{if $.Domain}}&amp;domain={{$.Domain}}{{end}}">{{if eq $s "ack"}}acknowledged{{else}}{{$s}}{{end}}</a>{{end}}
+    <span style="width:8px"></span>
+    {{range $s := (splitComma "all,critical,warning,info")}}<a class="filter-chip{{if eq $s $.Severity}} active{{end}}" href="/alerts?state={{$.State}}&amp;severity={{$s}}{{if $.Domain}}&amp;domain={{$.Domain}}{{end}}">{{if eq $s "all"}}all severities{{else}}{{$s}}{{end}}</a>{{end}}
+    <span class="subtle" style="margin-left:auto;">{{.OpenCount}} open{{if .CriticalCount}} · <span style="color:var(--ax-fail)">{{.CriticalCount}} critical</span>{{end}}</span>
+    <form method="POST" action="/api/alerts/evaluate" style="margin:0;"><input type="hidden" name="_csrf" value="{{.CSRFToken}}"><input type="hidden" name="redirect" value="{{.CurrentPath}}"><button type="submit" class="small-btn">Run rules now</button></form>
+  </div>
+  {{if or .Domains .Domain}}
+  <form method="get" action="/alerts" class="toolbar" style="margin:-4px 0 12px;">
+    <input type="hidden" name="state" value="{{.State}}">
+    <input type="hidden" name="severity" value="{{.Severity}}">
+    <span class="subtle" style="min-width:60px;">Domain</span>
+    <select name="domain" data-autosubmit style="width:auto;margin:0;max-width:280px;">
+      <option value="">— All domains —</option>
+      {{range .Domains}}<option value="{{.}}"{{if eq . $.Domain}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+    <button type="submit" class="small-btn">Filter</button>
+    {{if .Domain}}<a class="filter-chip active" href="/alerts?state={{.State}}&amp;severity={{.Severity}}" title="Remove this filter">domain: {{.Domain}} &#10005;</a>{{end}}
+  </form>
+  {{end}}
+
+  {{if .Alerts}}
+    {{range .Alerts}}
+    <details class="alert-row">
+      <summary class="alert-summary">
+        <span class="sev-dot sev-{{.Severity}}"></span>
+        <div class="alert-body">
+          <div class="alert-name">{{.Title}} <span class="subtle">{{metric .RuleID}}</span>{{if .Domain}} <span class="tag" style="margin-left:6px;">{{.Domain}}</span>{{end}}</div>
+          <div class="alert-meta">{{.Message}}</div>
+          <div class="alert-meta">first fired {{ago .FirstFired}} · last fired {{ago .LastFired}} · fired {{.Count}}×{{if .AcknowledgedAt}} · acknowledged {{ago .AcknowledgedAt}}{{end}}</div>
+        </div>
+        {{if .AcknowledgedAt}}<span class="badge neutral">acknowledged</span>{{else}}
+        <form method="POST" action="/api/alerts/{{.ID}}/ack" style="margin:0;"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><input type="hidden" name="redirect" value="{{$.CurrentPath}}"><button type="submit" class="small-btn primary">Acknowledge</button></form>
+        {{end}}
+      </summary>
+      <div class="alert-detail">
+        {{if .PayloadRows}}<div class="payload">{{range .PayloadRows}}<div><span>{{index . 0}}</span><span>{{index . 1}}</span></div>{{end}}</div>{{end}}
+        <a class="link-btn" href="{{.ContextHref}}">View in context →</a>
+      </div>
+    </details>
+    {{end}}
+  {{else}}
+  <div class="card"><div class="empty-state"><div class="glyph">✓</div>No alerts here<br><span class="section-sub">Nothing matches this filter right now.</span></div></div>
+  {{end}}
+
+  <div class="card" style="margin-top:20px;">
+    <div class="section-head"><h2>Alert rules</h2><span class="section-sub">thresholds come from environment variables</span></div>
+    <div class="rules-grid">
+      {{range .Rules}}
+      <div class="rule-row"><div><b>{{.Name}}</b><span class="rule-id"> {{.ID}}</span><div class="footnote">{{.Description}}</div></div><div class="subtle mono" style="text-align:right;">{{.Threshold}}</div><div></div></div>
+      {{end}}
+    </div>
+    <div class="footnote">An alert is identified by rule + domain + key. Firing it again bumps the count and "last fired"; acknowledged alerts re-open (and are delivered again) only when the condition fires after the acknowledgement. Delivery is limited to once per alert per day.</div>
+  </div>
+</div>

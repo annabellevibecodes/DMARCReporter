@@ -145,3 +145,34 @@ func TestIsDMARCFile(t *testing.T) {
 		}
 	}
 }
+
+func TestParseXMLNormalizesRecords(t *testing.T) {
+	const doc = `<?xml version="1.0"?>
+<feedback>
+  <report_metadata><org_name>x</org_name><report_id>r1</report_id>
+    <date_range><begin>1</begin><end>2</end></date_range></report_metadata>
+  <policy_published><domain>example.com</domain><p>none</p></policy_published>
+  <record><row><source_ip> 192.0.2.10 </source_ip><count>-5</count>
+    <policy_evaluated><disposition>none</disposition><dkim>pass</dkim><spf>pass</spf></policy_evaluated></row>
+    <identifiers><header_from>example.com</header_from></identifiers></record>
+  <record><row><source_ip>not-an-ip; DROP TABLE</source_ip><count>7</count>
+    <policy_evaluated><disposition>none</disposition><dkim>fail</dkim><spf>fail</spf></policy_evaluated></row>
+    <identifiers><header_from>example.com</header_from></identifiers></record>
+  <record><row><source_ip>2001:DB8::1</source_ip><count>3</count>
+    <policy_evaluated><disposition>none</disposition><dkim>pass</dkim><spf>fail</spf></policy_evaluated></row>
+    <identifiers><header_from>example.com</header_from></identifiers></record>
+</feedback>`
+	fb, err := ParseXML(strings.NewReader(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fb.Records) != 2 {
+		t.Fatalf("records = %d, want 2 (invalid source_ip dropped)", len(fb.Records))
+	}
+	if fb.Records[0].Row.SourceIP != "192.0.2.10" || fb.Records[0].Row.Count != 0 {
+		t.Errorf("record 0 = %+v, want trimmed IP and count clamped to 0", fb.Records[0].Row)
+	}
+	if fb.Records[1].Row.SourceIP != "2001:db8::1" {
+		t.Errorf("record 1 ip = %q, want canonical IPv6", fb.Records[1].Row.SourceIP)
+	}
+}

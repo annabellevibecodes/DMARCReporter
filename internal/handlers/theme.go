@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/url"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -31,8 +32,16 @@ func (a *App) HandleSetTheme(c *fiber.Ctx) error {
 		HTTPOnly: false,
 		SameSite: "Lax",
 	})
-	ref := c.Get("Referer", "/")
-	if u, err := url.Parse(ref); err != nil || u.Host != "" {
+	// Only bounce back to a path on this app: the Referer is a full URL, so
+	// keep its path+query and drop scheme/host entirely.
+	ref := "/"
+	if u, err := url.Parse(c.Get("Referer")); err == nil && strings.HasPrefix(u.Path, "/") {
+		ref = u.Path
+		if u.RawQuery != "" {
+			ref += "?" + u.RawQuery
+		}
+	}
+	if !safeRedirect(ref) {
 		ref = "/"
 	}
 	return c.Redirect(ref, fiber.StatusSeeOther)

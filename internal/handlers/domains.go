@@ -5,6 +5,7 @@ import (
 	"errors"
 	"html/template"
 	"net"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -282,21 +283,21 @@ func (a *App) HandleDomainsList(c *fiber.Ctx) error {
 	}
 	totalPages := (total + domainsPageSize - 1) / domainsPageSize
 	return c.Render("domains", fiber.Map{
-		"Title":         "Domains — DMARC Reporter",
-		"Theme":         getTheme(c),
-		"ActivePage":    "domains",
-		"Domains":       domains,
-		"Page":          page,
-		"TotalPages":    totalPages,
-		"Total":         total,
-		"PageNums":      pageWindow(page, totalPages),
-		"PeriodOptions": periodOptions,
+		"Title":          "Domains — DMARC Reporter",
+		"Theme":          getTheme(c),
+		"ActivePage":     "domains",
+		"Domains":        domains,
+		"Page":           page,
+		"TotalPages":     totalPages,
+		"Total":          total,
+		"PageNums":       pageWindow(page, totalPages),
+		"PeriodOptions":  periodOptions,
 		"SelectedPeriod": period,
-		"PeriodLabel":   periodLabel,
-		"SortBy":        sortBy,
-		"SortDir":       sortDir,
-		"IMAPEnabled":   a.FetchEnabled(),
-		"CSRFToken":     c.Locals("csrf"),
+		"PeriodLabel":    periodLabel,
+		"SortBy":         sortBy,
+		"SortDir":        sortDir,
+		"IMAPEnabled":    a.FetchEnabled(),
+		"CSRFToken":      c.Locals("csrf"),
 	}, "layouts/base")
 }
 
@@ -307,7 +308,8 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 	}
 
 	period := c.Query("period", "1y")
-	from, _, periodLabel := parsePeriod(period)
+	from, to, periodLabel := parsePeriod(period)
+	f := database.StatsFilter{Domain: domain, From: from, To: to}
 
 	records, err := database.GetDomainRecords(a.DB, domain, from, 100)
 	if err != nil {
@@ -315,6 +317,20 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 	}
 
 	agg, err := database.GetDomainAggStats(a.DB, domain, from)
+	if err != nil {
+		return err
+	}
+
+	// Analytics: matrix / enforcement (C5–C7), authentication (A1–A8), policy (P1–P6).
+	overview, err := a.computeOverview(f)
+	if err != nil {
+		return err
+	}
+	auth, err := a.computeAuth(f)
+	if err != nil {
+		return err
+	}
+	policy, err := a.computePolicy(f)
 	if err != nil {
 		return err
 	}
@@ -352,10 +368,8 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 		return err
 	}
 
-	dkimSelectors, err := database.GetDKIMSelectorStats(a.DB, domain)
-	if err != nil {
-		return err
-	}
+	// Selector chart uses the window-scoped inventory (A1).
+	dkimSelectors := auth.Selectors
 
 	type selectorPayload struct {
 		Labels []string `json:"labels"`
@@ -381,30 +395,38 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 	bimiRec := lookupBIMI(domain)
 	mtaStsRec := lookupMTASTS(domain)
 
+	flashKind, flashMsg := getFlash(c)
 	return c.Render("domain_detail", fiber.Map{
-		"Title":               domain + " — DMARC Reporter",
-		"Theme":               getTheme(c),
-		"ActivePage":          "domains",
-		"Domain":              domain,
-		"Records":             records,
-		"TotalMessages":       agg.TotalMessages,
-		"TotalPassed":         agg.Passed,
-		"TotalFailed":         agg.Failed,
-		"PassRate":            agg.PassRate,
-		"UniqueSenders":       agg.UniqueSenders,
-		"UniqueRecipients":    agg.UniqueRecipients,
-		"RecipientDomains":    recipients,
+		"Overview":              overview,
+		"Auth":                  auth,
+		"Policy":                policy,
+		"SourcesQuery":          template.URL("period=" + url.QueryEscape(period) + "&domain=" + url.QueryEscape(domain)),
+		"CurrentPath":           c.OriginalURL(),
+		"FlashKind":             flashKind,
+		"FlashMsg":              flashMsg,
+		"Title":                 domain + " — DMARC Reporter",
+		"Theme":                 getTheme(c),
+		"ActivePage":            "domains",
+		"Domain":                domain,
+		"Records":               records,
+		"TotalMessages":         agg.TotalMessages,
+		"TotalPassed":           agg.Passed,
+		"TotalFailed":           agg.Failed,
+		"PassRate":              agg.PassRate,
+		"UniqueSenders":         agg.UniqueSenders,
+		"UniqueRecipients":      agg.UniqueRecipients,
+		"RecipientDomains":      recipients,
 		"EnvelopeFromBreakdown": efBreakdown,
-		"DomainTrendData":     template.JS(trendBytes),
-		"DKIMSelectors":       dkimSelectors,
-		"DKIMSelectorData":    template.JS(selectorBytes),
-		"DMARCRecord":         dmarcRec,
-		"BIMIRecord":          bimiRec,
-		"MTASTSRecord":        mtaStsRec,
-		"PeriodOptions":       periodOptions,
-		"SelectedPeriod":      period,
-		"PeriodLabel":         periodLabel,
-		"IMAPEnabled":         a.FetchEnabled(),
-		"CSRFToken":           c.Locals("csrf"),
+		"DomainTrendData":       template.JS(trendBytes),
+		"DKIMSelectors":         dkimSelectors,
+		"DKIMSelectorData":      template.JS(selectorBytes),
+		"DMARCRecord":           dmarcRec,
+		"BIMIRecord":            bimiRec,
+		"MTASTSRecord":          mtaStsRec,
+		"PeriodOptions":         periodOptions,
+		"SelectedPeriod":        period,
+		"PeriodLabel":           periodLabel,
+		"IMAPEnabled":           a.FetchEnabled(),
+		"CSRFToken":             c.Locals("csrf"),
 	}, "layouts/base")
 }

@@ -23,9 +23,9 @@ func WriteDOCX(w io.Writer, rd *ReportData) error {
 
 	files := map[string]string{
 		"[Content_Types].xml":          contentTypesXML,
-		"_rels/.rels":                   relsXML,
-		"word/_rels/document.xml.rels":  docRelsXML,
-		"word/document.xml":             buildDocumentXML(body),
+		"_rels/.rels":                  relsXML,
+		"word/_rels/document.xml.rels": docRelsXML,
+		"word/document.xml":            buildDocumentXML(body),
 	}
 	for name, content := range files {
 		fw, err := zw.Create(name)
@@ -117,6 +117,48 @@ func buildDocxBody(rd *ReportData, title string) string {
 			}
 		}
 		sb.WriteString(docxTable(headers, rows))
+	}
+
+	// ---- Analytics sections ----
+	matrix, enforcement := analyticsKV(rd)
+	if len(matrix) > 0 {
+		sb.WriteString(docxPara(""))
+		sb.WriteString(docxHeading2("Authentication Matrix"))
+		sb.WriteString(docxTable([]string{"Bucket", "Messages"}, kvSliceToRows(matrix)))
+	}
+	if len(enforcement) > 0 {
+		sb.WriteString(docxPara(""))
+		sb.WriteString(docxHeading2("Enforcement Effectiveness"))
+		sb.WriteString(docxTable([]string{"Metric", "Value"}, kvSliceToRows(enforcement)))
+	}
+	if len(rd.PolicyTags) > 0 {
+		sb.WriteString(docxPara(""))
+		sb.WriteString(docxHeading2("Published Policy"))
+		sb.WriteString(docxPara(joinStrings(rd.PolicyTags, "  ")))
+	}
+	if len(rd.DomainPolicies) > 0 {
+		sb.WriteString(docxPara(""))
+		sb.WriteString(docxHeading2("Published Policy by Domain"))
+		rows := make([][]string, len(rd.DomainPolicies))
+		for i, d := range rd.DomainPolicies {
+			rows[i] = []string{d.Domain, joinStrings(d.Tags, "  ")}
+		}
+		sb.WriteString(docxTable([]string{"Domain", "Effective Record"}, rows))
+	}
+	if rows := changeLogRows(rd); len(rows) > 0 {
+		sb.WriteString(docxPara(""))
+		sb.WriteString(docxHeading2("Policy Change Log"))
+		sb.WriteString(docxTable(changeLogHeaders, rows))
+	}
+	if rows := newSourceRows(rd); len(rows) > 0 {
+		sb.WriteString(docxPara(""))
+		sb.WriteString(docxHeading2("New Sources This Period"))
+		sb.WriteString(docxTable(newSourceHeaders, rows))
+	}
+	if rows := alertRows(rd); len(rows) > 0 {
+		sb.WriteString(docxPara(""))
+		sb.WriteString(docxHeading2("Open Alerts"))
+		sb.WriteString(docxTable(alertHeaders, rows))
 	}
 
 	return sb.String()

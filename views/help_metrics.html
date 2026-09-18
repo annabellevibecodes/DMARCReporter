@@ -1,0 +1,292 @@
+<h1>Help &amp; Reference <small style="font-size:0.8rem;font-weight:normal;color:var(--pico-muted-color);">&middot; {{.HelpTitle}}</small></h1>
+<p style="color:var(--pico-muted-color);">{{.HelpBlurb}}</p>
+
+{{template "partials/help_nav" .}}
+
+<nav style="margin-bottom:2rem;">
+  <small>
+    <a href="#ids">How to read an ID</a> &middot;
+    <a href="#compliance">C1–C8 Compliance</a> &middot;
+    <a href="#sources">S1–S6 Sources</a> &middot;
+    <a href="#auth">A1–A8 Authentication</a> &middot;
+    <a href="#policy">P1–P6 Policy</a> &middot;
+    <a href="#reporters">R1–R8 Reporters</a> &middot;
+    <a href="#windows">Windows &amp; comparisons</a>
+  </small>
+</nav>
+
+<!-- How to read an ID -->
+<article id="ids">
+  <header><strong>How to read an identifier</strong></header>
+  <p>
+    Small tags such as <code>C5</code> or <code>S3</code> appear next to blocks and tables
+    throughout the interface. Each one names a specific metric with a fixed definition, so the
+    same number always means the same thing on the dashboard, on a domain page, in an export and
+    in the API. The letter is the family:
+  </p>
+  <table>
+    <thead><tr><th>Family</th><th>Covers</th><th>Mainly shown on</th></tr></thead>
+    <tbody>
+      <tr><td><strong>C</strong> — Compliance</td><td>Volume, pass rates, the authentication matrix, disposition and enforcement</td><td><a href="/">Dashboard</a>, domain pages</td></tr>
+      <tr><td><strong>S</strong> — Sources</td><td>Who is sending as you, and how each sending IP behaves</td><td><a href="/sources">Senders</a>, source detail</td></tr>
+      <tr><td><strong>A</strong> — Authentication</td><td>The raw DKIM and SPF detail behind the pass/fail verdict</td><td>Domain detail</td></tr>
+      <tr><td><strong>P</strong> — Policy</td><td>Your published DMARC record as reporters actually saw it</td><td>Domain detail</td></tr>
+      <tr><td><strong>R</strong> — Reporters</td><td>Who sends you reports, how promptly, and report hygiene</td><td><a href="/reporters">Reporters</a></td></tr>
+      <tr><td><strong>X</strong> — Alerts</td><td>The rules that raise alerts — see <a href="/help/alerts">Alerts &amp; health</a></td><td><a href="/alerts">Alerts</a></td></tr>
+    </tbody>
+  </table>
+  <p>
+    Unless stated otherwise, every metric counts <em>messages</em> (the <code>count</code> on a
+    report row), not report rows, and obeys the period and domain filters currently selected.
+  </p>
+</article>
+
+<!-- Compliance -->
+<article id="compliance">
+  <header><strong>C1–C8 — Compliance</strong></header>
+  <p>
+    The headline numbers: how much mail there was, how much authenticated, and what receivers
+    did about the rest.
+  </p>
+  <table>
+    <thead><tr><th style="white-space:nowrap;">ID</th><th>Metric</th><th>What it measures</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>C1</code></td><td>Volume</td>
+        <td>Total messages in the window, with the number of reports, distinct policy domains and distinct reporting organisations behind them.</td>
+        <td>Dashboard tiles</td>
+      </tr>
+      <tr>
+        <td><code>C2</code></td><td>DMARC pass rate</td>
+        <td>Share of messages where the receiver's <em>aligned</em> DKIM result or <em>aligned</em> SPF result was a pass. This is the DMARC verdict, not the raw check.</td>
+        <td>Dashboard tiles, trend chart</td>
+      </tr>
+      <tr>
+        <td><code>C3</code></td><td>Aligned DKIM pass rate</td>
+        <td>Share of messages whose evaluated DKIM result was a pass, counted on its own.</td>
+        <td>Dashboard tiles, trend chart</td>
+      </tr>
+      <tr>
+        <td><code>C4</code></td><td>Aligned SPF pass rate</td>
+        <td>The same for SPF. C3 and C4 overlap: a message can be counted in both.</td>
+        <td>Dashboard tiles, trend chart</td>
+      </tr>
+      <tr>
+        <td><code>C5</code></td><td>Authentication matrix</td>
+        <td>Every message placed in one of four cells: <em>both aligned</em>, <em>DKIM only</em> (usually forwarding, where SPF breaks in transit), <em>SPF only</em> (unsigned or broken signing) and <em>neither</em> (misconfigured or spoofed). The cells are exclusive and sum to C1.</td>
+        <td>Dashboard matrix block; each cell links to <a href="/sources">Senders</a></td>
+      </tr>
+      <tr>
+        <td><code>C6</code></td><td>Disposition split</td>
+        <td>What receivers actually did: delivered (<code>none</code>), <code>quarantine</code> or <code>reject</code>, as volumes and shares.</td>
+        <td>Dashboard enforcement block</td>
+      </tr>
+      <tr>
+        <td><code>C7</code></td><td>Enforcement effectiveness</td>
+        <td>Of the mail that failed DMARC, the share receivers actually quarantined or rejected. Shown as n/a while your policy is <code>p=none</code>, since there is nothing to enforce; in that case the block instead shows how much a move to <code>p=reject</code> would block.</td>
+        <td>Dashboard enforcement block</td>
+      </tr>
+      <tr>
+        <td><code>C8</code></td><td>Policy overrides</td>
+        <td>Failing mail delivered more leniently than your policy, grouped by the reason the receiver gave. Rows with no <code>&lt;reason&gt;</code> at all are counted separately as <em>unexplained overrides</em> — the ones worth investigating. Reason types are explained under <a href="/help">Email authentication</a>.</td>
+        <td>Dashboard "forgiven failures"</td>
+      </tr>
+    </tbody>
+  </table>
+</article>
+
+<!-- Sources -->
+<article id="sources">
+  <header><strong>S1–S6 — Sources</strong></header>
+  <p>
+    A <em>source</em> is one IP address that sent mail claiming to be from one of your domains.
+  </p>
+  <table>
+    <thead><tr><th style="white-space:nowrap;">ID</th><th>Metric</th><th>What it measures</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>S1</code></td><td>Source inventory</td>
+        <td>One row per IP with its own C5 matrix, raw DKIM/SPF results, disposition split, first and last seen, how many reporters saw it, how many header-from domains it sent as, and any label you saved.</td>
+        <td><a href="/sources">Senders</a>, source detail</td>
+      </tr>
+      <tr>
+        <td><code>S2</code></td><td>New sources</td>
+        <td>IPs whose earliest report anywhere in your data falls inside the selected period — a first appearance, not merely recent activity. Needs a bounded period: with "All Time" every source would be new.</td>
+        <td>Dashboard attention list; "New in period" on Senders</td>
+      </tr>
+      <tr>
+        <td><code>S3</code></td><td>Source pattern</td>
+        <td>A label derived from the source's own matrix: <em>healthy</em> (≥90% both aligned), <em>forwarder</em> (≥60% DKIM only), <em>broken signing</em> (≥60% SPF only), <em>spoof suspect</em> (≥95% neither with at least 5 messages), otherwise <em>mixed</em>. Thresholds are the <code>PATTERN_*</code> settings. A classification you save on a source overrides the computed pattern.</td>
+        <td>Pattern chips on <a href="/sources">Senders</a></td>
+      </tr>
+      <tr>
+        <td><code>S4</code></td><td>Spoof volume</td>
+        <td>The <em>neither</em> mail from C5, split by whether the sending IP falls inside the networks the domain's SPF record authorises. Mail failing from outside SPF is the stronger spoofing signal; mail failing from inside it usually means broken signing. Requires the SPF expansion from <a href="/enrich">Enrich</a>, and reports "not resolved yet" until then.</td>
+        <td>Dashboard spoof block</td>
+      </tr>
+      <tr>
+        <td><code>S5</code></td><td>Top failing sources</td>
+        <td>Sources ranked by failure rate rather than volume, above a minimum message count so a single failing message cannot top the list.</td>
+        <td>Dashboard</td>
+      </tr>
+      <tr>
+        <td><code>S6</code></td><td>Source enrichment</td>
+        <td>Reverse DNS, a friendly provider name derived from it, and WHOIS organisation, ASN and country. Populated by <a href="/enrich">Enrich</a> and cached; sources appear without it until then.</td>
+        <td>Enrichment column on <a href="/sources">Senders</a></td>
+      </tr>
+    </tbody>
+  </table>
+</article>
+
+<!-- Authentication -->
+<article id="auth">
+  <header><strong>A1–A8 — Authentication</strong></header>
+  <p>
+    Where the C family reports the DMARC verdict, the A family reports the underlying checks.
+    The distinction matters: a message can pass DKIM outright and still fail DMARC because the
+    signing domain does not align. These appear on a domain's detail page.
+  </p>
+  <table>
+    <thead><tr><th style="white-space:nowrap;">ID</th><th>Metric</th><th>What it measures</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>A1</code></td><td>Selector inventory</td>
+        <td>Every DKIM selector seen signing for the domain, with first and last seen, how many distinct sources used it, its pass rate, and an <em>expected</em> flag you set yourself. That flag drives alerts X4 and X5.</td>
+      </tr>
+      <tr>
+        <td><code>A2</code></td><td>Raw DKIM results</td>
+        <td>Distribution of the DKIM result reporters recorded (<code>pass</code>, <code>fail</code>, <code>none</code>, <code>temperror</code>, <code>permerror</code>) before alignment is considered, weighted by message count.</td>
+      </tr>
+      <tr>
+        <td><code>A3</code></td><td>Signing alignment</td>
+        <td>How each signature's domain relates to the visible From domain: <em>exact</em>, <em>relaxed</em> (same organisational domain, judged with the Public Suffix List) or <em>third party</em>. Includes a histogram of how many signatures each message carried.</td>
+      </tr>
+      <tr>
+        <td><code>A4</code></td><td>Raw SPF results</td>
+        <td>The same distribution for the SPF check.</td>
+      </tr>
+      <tr>
+        <td><code>A5</code></td><td>SPF scope</td>
+        <td>Whether SPF was evaluated against the envelope sender (<code>mfrom</code>) or the HELO name. A missing scope is counted as <code>mfrom</code>, which is what the standard assumes.</td>
+      </tr>
+      <tr>
+        <td><code>A6</code></td><td>Envelope-from alignment</td>
+        <td>Each envelope-from value with its alignment class against the header from: exact, relaxed, misaligned, or the null sender <code>&lt;&gt;</code> used by bounces.</td>
+      </tr>
+      <tr>
+        <td><code>A7</code></td><td>Alignment gap</td>
+        <td>Mail where a raw check passed but the aligned result did not — it authenticated for somebody, just not for you. Almost always a configuration problem with a third-party sender rather than an attack, and it lists the domain pairs involved so you can fix it.</td>
+      </tr>
+      <tr>
+        <td><code>A8</code></td><td>DNS error rate</td>
+        <td>Share of raw results that were <code>temperror</code> or <code>permerror</code>, per reporting organisation. A spike usually means your DNS was unreachable or your SPF record exceeded its lookup limit, not that senders changed. Drives alert X9.</td>
+      </tr>
+    </tbody>
+  </table>
+</article>
+
+<!-- Policy -->
+<article id="policy">
+  <header><strong>P1–P6 — Policy</strong></header>
+  <p>
+    What reporters saw when they looked up your DMARC record. This is the published policy as
+    observed from the outside, which can differ from what you believe you published.
+  </p>
+  <table>
+    <thead><tr><th style="white-space:nowrap;">ID</th><th>Metric</th><th>What it measures</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>P1</code></td><td>Active policy</td>
+        <td>The full published record — <code>p</code>, <code>sp</code>, <code>np</code>, <code>adkim</code>, <code>aspf</code>, <code>pct</code>, <code>fo</code>, <code>discovery_method</code> and <code>testing</code> — for the tuple covering the most mail, plus what each reporter individually saw.</td>
+      </tr>
+      <tr>
+        <td><code>P2</code></td><td>Policy consistency</td>
+        <td>Every distinct record seen in the window with the reporters that saw each. More than one means DNS is inconsistent, a change is still propagating, or something is answering differently. Compared on <code>p</code>, <code>sp</code>, <code>adkim</code>, <code>aspf</code> and <code>pct</code>; other tags are displayed but not compared. Drives alert X8.</td>
+      </tr>
+      <tr>
+        <td><code>P3</code></td><td>Policy change log</td>
+        <td>An entry each time the majority record changes, with the pass rate for the 7 days before and after, so you can see what a change actually did. Drives alert X7.</td>
+      </tr>
+      <tr>
+        <td><code>P4</code></td><td>Subdomain traffic</td>
+        <td>Mail whose visible From domain is a subdomain of the policy domain. Subdomains are governed by <code>sp</code> rather than <code>p</code>, and are a common blind spot.</td>
+      </tr>
+      <tr>
+        <td><code>P5</code></td><td>pct sampling</td>
+        <td>Shown only when <code>pct</code> is below 100: the share of failing mail the policy should have skipped versus the <code>sampled_out</code> share reporters actually recorded.</td>
+      </tr>
+      <tr>
+        <td><code>P6</code></td><td>Enforcement readiness</td>
+        <td>Whether it is safe to tighten the policy. Under <code>p=none</code> it is the share of mail that would start being blocked. Under an enforcing policy it is the failing volume coming from sources you labelled <em>known_good</em> — legitimate mail already at risk.</td>
+      </tr>
+    </tbody>
+  </table>
+</article>
+
+<!-- Reporters -->
+<article id="reporters">
+  <header><strong>R1–R8 — Reporters and hygiene</strong></header>
+  <p>
+    Metrics about the reports themselves rather than the mail. They answer "can I trust this
+    picture?" — missing reporters mean blind spots, not improvements.
+  </p>
+  <table>
+    <thead><tr><th style="white-space:nowrap;">ID</th><th>Metric</th><th>What it measures</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>R1</code></td><td>Reporter inventory</td>
+        <td>Each reporting organisation with its report count, message volume and share, contact address, and the schema versions it uses.</td>
+      </tr>
+      <tr>
+        <td><code>R2</code></td><td>Reporter gaps</td>
+        <td>Reporters that were active in the last 14 days but have sent nothing for <code>ALERT_REPORTER_GAP_DAYS</code> (3 by default), plus a per-day presence strip. A reporter going quiet looks like improvement in every other metric, which is why it is tracked. Drives alert X6.</td>
+      </tr>
+      <tr>
+        <td><code>R3</code></td><td>Report latency</td>
+        <td>How long after a reporting window closes the report actually arrives, as a median and 95th percentile per reporter. Reports whose arrival time is unknown are excluded.</td>
+      </tr>
+      <tr>
+        <td><code>R4</code></td><td>Window anomalies</td>
+        <td>Reports whose window is not roughly a day (outside 23 to 25 hours). These skew any per-day rate.</td>
+      </tr>
+      <tr>
+        <td><code>R5</code></td><td>Duplicates</td>
+        <td>Reports rejected on import because that organisation and report ID were already stored.</td>
+      </tr>
+      <tr>
+        <td><code>R6</code></td><td>Parse errors and schema</td>
+        <td>Attachments that failed to parse, with the distribution of report versions and XML namespaces: the original RFC 7489 form versus the newer DMARCbis <code>dmarc-2.0</code> namespace.</td>
+      </tr>
+      <tr>
+        <td><code>R7</code></td><td>Unmanaged domains</td>
+        <td>Policy domains appearing in reports that are not on your managed-domains list — either a domain you forgot to add, or reports arriving for a domain that is not yours.</td>
+      </tr>
+      <tr>
+        <td><code>R8</code></td><td>Recipient domains</td>
+        <td>The receiving domains your mail reached, with the pass rate at each. A rate that is poor at one receiver only points at that relationship rather than at your configuration.</td>
+      </tr>
+    </tbody>
+  </table>
+</article>
+
+<!-- Windows -->
+<article id="windows">
+  <header><strong>Windows and comparisons</strong></header>
+  <p>
+    Every metric is evaluated over the period selected on the page, matched against the report's
+    own window start rather than when the report arrived. Dashboard tiles also show a delta
+    against the immediately preceding window of the same length, so "last 30 days" is compared
+    with the 30 days before it.
+  </p>
+  <p>
+    The same values are available from the API. Each <code>/api/</code> endpoint accepts
+    <code>period</code>, <code>domain</code> and <code>ef</code> (outbound sender domain), and
+    returns the comparison window alongside the current one when given <code>compare=1</code>.
+  </p>
+  <p>
+    Because a reporter's window for one day usually arrives during the next, metrics described as
+    covering "the last 24 hours" use a 48-hour window by default
+    (<code>ALERT_RECENT_HOURS</code>). Expect roughly a day of lag before any change in your mail
+    shows up here.
+  </p>
+</article>

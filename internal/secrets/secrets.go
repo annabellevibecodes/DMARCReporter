@@ -10,27 +10,50 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
+
+	"golang.org/x/crypto/argon2"
 )
+
+// Argon2id parameters for passphrase-derived keys (RFC 9106 second
+// recommended option: 64 MiB, 3 passes, 4 lanes).
+const (
+	argonTime    = 3
+	argonMemory  = 64 * 1024
+	argonThreads = 4
+)
+
+// kdfSalt is a fixed application salt. Passphrase keys are per deployment and
+// there is no place to persist a random salt before the database is open, so
+// the salt only serves to make precomputed tables app-specific; the work
+// factor comes from argon2id.
+var kdfSalt = []byte("dmarcreporter/secrets/v2")
 
 // Box encrypts and decrypts small secret payloads.
 type Box struct {
 	aead cipher.AEAD
+	// legacy is set only for passphrase keys: it is the pre-v2 SHA-256
+	// derived key, tried on decrypt so data written by older versions still
+	// opens. Encrypt always uses aead, so re-saving a secret migrates it.
+	legacy cipher.AEAD
 }
 
-// Open builds a Box. If envKey is non-empty it is used (64-char hex is taken
-// as a raw 32-byte key, anything else is hashed with SHA-256). Otherwise the
-// key is read from keyFile, which is created with a random key on first use.
+// Open builds a Box. If envKey is non-empty it is used: a 64-char hex string
+// is taken as a raw 32-byte key; anything else is treated as a passphrase and
+// stretched with argon2id. Otherwise the key is read from keyFile, which is
+// created with a random key on first use.
 func Open(envKey, keyFile string) (*Box, error) {
-	var key []byte
+	var key, legacyKey []byte
 	switch {
 	case envKey != "":
 		if raw, err := hex.DecodeString(envKey); err == nil && len(raw) == 32 {
 			key = raw
 		} else {
+			key = argon2.IDKey([]byte(envKey), kdfSalt, argonTime, argonMemory, argonThreads, 32)
 			sum := sha256.Sum256([]byte(envKey))
-			key = sum[:]
+			legacyKey = sum[:]
 		}
 	default:
 		var err error
@@ -40,15 +63,25 @@ func Open(envKey, keyFile string) (*Box, error) {
 		}
 	}
 
+	aead, err := newAEAD(key)
+	if err != nil {
+		return nil, err
+	}
+	b := &Box{aead: aead}
+	if legacyKey != nil {
+		if b.legacy, err = newAEAD(legacyKey); err != nil {
+			return nil, err
+		}
+	}
+	return b, nil
+}
+
+func newAEAD(key []byte) (cipher.AEAD, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	return &Box{aead: aead}, nil
+	return cipher.NewGCM(block)
 }
 
 func loadOrCreateKeyFile(path string) ([]byte, error) {
@@ -86,7 +119,8 @@ func (b *Box) Encrypt(plaintext []byte) (string, error) {
 	return base64.StdEncoding.EncodeToString(sealed), nil
 }
 
-// Decrypt reverses Encrypt.
+// Decrypt reverses Encrypt. For passphrase keys, ciphertext written by
+// versions that used the old SHA-256 derivation is still accepted.
 func (b *Box) Decrypt(encoded string) ([]byte, error) {
 	sealed, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
@@ -96,5 +130,12 @@ func (b *Box) Decrypt(encoded string) ([]byte, error) {
 	if len(sealed) < ns {
 		return nil, fmt.Errorf("ciphertext too short")
 	}
-	return b.aead.Open(nil, sealed[:ns], sealed[ns:], nil)
+	plain, err := b.aead.Open(nil, sealed[:ns], sealed[ns:], nil)
+	if err == nil || b.legacy == nil {
+		return plain, err
+	}
+	if plain, lerr := b.legacy.Open(nil, sealed[:ns], sealed[ns:], nil); lerr == nil {
+		return plain, nil
+	}
+	return nil, errors.New("cipher: message authentication failed")
 }

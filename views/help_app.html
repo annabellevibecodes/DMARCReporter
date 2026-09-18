@@ -1,0 +1,99 @@
+<h1>Help &amp; Reference <small style="font-size:0.8rem;font-weight:normal;color:var(--pico-muted-color);">&middot; {{.HelpTitle}}</small></h1>
+<p style="color:var(--pico-muted-color);">{{.HelpBlurb}}</p>
+
+{{template "partials/help_nav" .}}
+
+<nav style="margin-bottom:2rem;"><small><a href="#accounts">Mail accounts</a> &middot; <a href="#reading">Reading the dashboard</a></small></nav>
+
+<!-- Mail Accounts -->
+<article id="accounts">
+  <header><strong>Fetching Reports from Mailboxes</strong></header>
+  <p>
+    The <a href="/accounts">Accounts</a> page manages the mailboxes that DMARC and TLS-RPT reports
+    are fetched from. Each account is one mailbox; you can add as many as you need (e.g. one per
+    domain, or one shared inbox across several receivers). Clicking <strong>Fetch</strong> in the
+    navigation bar — or configuring <code>FETCH_INTERVAL</code> to run automatically — triggers a
+    background run across every enabled account. Progress and the outcome of the last run are
+    shown per account on the Accounts page.
+  </p>
+  <p><strong>Supported account types:</strong></p>
+  <table>
+    <thead><tr><th>Type</th><th>Authentication</th></tr></thead>
+    <tbody>
+      <tr><td>Generic IMAP</td><td>Username and password over TLS</td></tr>
+      <tr>
+        <td>Gmail / Google Workspace</td>
+        <td>
+          Either an <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">app password</a>
+          (requires 2-step verification), or OAuth2: create a Web-application OAuth client in Google
+          Cloud Console, enter its client ID and secret when adding the account (leave the password
+          blank), then complete the Google consent screen you are redirected to. The refresh token is
+          stored encrypted and access tokens renew automatically.
+        </td>
+      </tr>
+      <tr>
+        <td>Office 365 / Exchange Online</td>
+        <td>
+          OAuth2 only — Microsoft has disabled basic authentication for IMAP. Register an app in
+          Entra ID with the <code>IMAP.AccessAsApp</code> application permission (admin consent
+          required), grant its service principal mailbox access via
+          <code>New-ServicePrincipal</code> + <code>Add-MailboxPermission</code> in Exchange Online
+          PowerShell, then enter the tenant ID, client ID, and client secret when adding the account.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Use <strong>Test</strong> on the Accounts page to verify connectivity and mailbox access without
+    fetching or moving anything. Processed emails are moved to a subfolder (created automatically,
+    named to match the server's folder-naming convention) so re-running a fetch never re-imports the
+    same message.
+  </p>
+</article>
+
+<!-- Reading the dashboard -->
+<article id="reading">
+  <header><strong>Reading This Dashboard</strong></header>
+  <p><strong>Pass vs Fail</strong></p>
+  <p>
+    A message row is counted as <em>passed</em> when it passes DMARC (i.e. SPF or DKIM passed
+    with correct alignment). It is counted as <em>failed</em> when neither check passed with
+    alignment. A high failure rate from a source you recognise usually means misconfigured
+    SPF/DKIM; from an unknown source it may indicate spoofing.
+  </p>
+  <p><strong>Pass rate</strong></p>
+  <p>
+    Shown as a percentage of messages from that source that passed DMARC. A legitimate sending
+    service should be at or near 100%. Values well below 100% warrant investigation.
+  </p>
+  <p><strong>Envelope From vs Header From</strong></p>
+  <p>
+    The <em>envelope from</em> (return-path) is used for SPF and for bounce delivery.
+    The <em>header from</em> is the address displayed to recipients. DMARC requires alignment
+    between these two. A mismatch highlighted in the report means the sending service is using
+    a different return-path domain, which is common with third-party senders (ESPs, CRMs).
+    Those senders need to either publish DKIM signed with your domain or be added to your SPF record.
+  </p>
+  <p><strong>Source IPs</strong></p>
+  <p>
+    Each row in an aggregate report represents one source IP sending mail that claims to be
+    from your domain. Unexpected IPs you do not recognise could indicate a misconfigured
+    service, a compromised account, or an active spoofing attempt.
+  </p>
+  <p><strong>Provider labels</strong></p>
+  <p>
+    Where reverse DNS is cached for a source IP, the Sources pages and dashboard show a friendly
+    provider name (Google, Microsoft 365, SendGrid, Mailchimp, and others) instead of a bare IP
+    address, so at a glance you can tell "a known ESP is failing DKIM" from "an unrecognised IP is
+    sending mail as you." Run the <a href="/enrich">Enrich</a> page to populate this for IPs that
+    have not been looked up yet.
+  </p>
+  <p><strong>Data Enrichment</strong></p>
+  <p>
+    Use the <a href="/enrich">Enrich</a> page to resolve reverse DNS, WHOIS organisation, ASN and
+    country data for all source IPs, to check DMARC, BIMI, and MTA-STS records for all known
+    domains, and to expand each domain's SPF record into its authorised networks (cached for
+    24 hours). Enriched data is cached and used throughout the dashboard; until SPF has been
+    expanded the spoof-volume split shows "not resolved yet".
+  </p>
+</article>

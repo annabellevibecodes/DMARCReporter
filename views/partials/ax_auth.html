@@ -1,0 +1,115 @@
+{{/* Authentication section (A1–A8). Expects .Auth (authPayload), .CurrentPath, .CSRFToken, .Domain */}}
+{{with .Auth}}
+<div class="ax">
+  <div class="grid two-col mb">
+    <div class="stack">
+      <div class="card">
+        <div class="section-head"><h2>DKIM selector inventory <span class="subtle">{{metric "A1"}}</span></h2><span class="section-sub">mark the selectors you expect; unexpected new selectors raise an alert</span></div>
+        {{if .Selectors}}
+        <div class="table-wrap"><table class="data">
+          <thead><tr><th>Signing domain</th><th>Selector</th><th class="num">Messages</th><th>Pass rate</th><th class="num">Sources</th><th>First seen</th><th>Last seen</th><th>Expected</th></tr></thead>
+          <tbody>
+          {{range .Selectors}}
+          <tr>
+            <td class="mono-cell">{{.SigningDomain}}</td>
+            <td class="mono-cell">{{.Selector}}{{if .IsNew}}<span class="newsrc-badge">NEW</span>{{end}}</td>
+            <td class="num mono-cell">{{commaN .Total}}</td>
+            <td><span class="mini-bar"><span class="mini-bar-fill {{passClass .PassRate}}" style="width:{{pct0 .PassRate}}%"></span></span>{{pct0 .PassRate}}%</td>
+            <td class="num mono-cell">{{.Sources}}</td>
+            <td class="subtle">{{if .FirstSeen}}{{unixTime .FirstSeen}}{{else}}—{{end}}</td>
+            <td class="subtle">{{if .LastSeen}}{{unixTime .LastSeen}}{{else}}—{{end}}</td>
+            <td>
+              <form method="POST" action="/api/selectors/expected" class="inline-edit" style="gap:4px;">
+                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+                <input type="hidden" name="redirect" value="{{$.CurrentPath}}">
+                <input type="hidden" name="domain" value="{{.SigningDomain}}">
+                <input type="hidden" name="selector" value="{{.Selector}}">
+                {{if eq .Expected 1}}<span class="badge pass">expected</span><button class="small-btn" name="expected" value="-1" title="clear">✕</button>
+                {{else if eq .Expected 0}}<span class="badge fail">unexpected</span><button class="small-btn" name="expected" value="-1" title="clear">✕</button>
+                {{else}}<button class="small-btn primary" name="expected" value="1">expected</button><button class="small-btn" name="expected" value="0">not</button>{{end}}
+              </form>
+            </td>
+          </tr>
+          {{end}}
+          </tbody>
+        </table></div>
+        {{else}}<div class="empty-state"><div class="glyph">◌</div>No DKIM signatures reported in this window.</div>{{end}}
+      </div>
+
+      <div class="card">
+        <div class="section-head"><h2>Raw DKIM &amp; alignment <span class="subtle">{{metric "A2"}} · {{metric "A3"}}</span></h2></div>
+        <div class="u-label" style="margin-bottom:6px;">Raw DKIM result (per signature, weighted by messages)</div>
+        {{if .DKIMRaw}}
+        <div class="split"><span>pass {{pct0 .DKIMRawPassPct}}%</span><span>{{range .DKIMRaw}}{{if ne .Value "pass"}}{{.Value}} {{pct0 .Share}}% · {{end}}{{end}}</span></div>
+        <div class="hbar"><div style="width:{{pct0 .DKIMRawPassPct}}%"></div></div>
+        {{else}}<div class="subtle">no raw DKIM results</div>{{end}}
+        {{with .SigningAlignment}}
+        <div class="u-label" style="margin:14px 0 6px;">Signing domain vs header_from</div>
+        {{if gt .Total 0}}
+        <div class="legend-row"><span><span class="swatch" style="background:var(--ax-pass)"></span>exact {{pct0 .ExactPct}}%</span><span><span class="swatch" style="background:var(--ax-warn)"></span>relaxed {{pct0 .RelaxedPct}}%</span><span><span class="swatch" style="background:var(--ax-neutral)"></span>third-party {{pct0 .ThirdPartyPct}}%</span></div>
+        <div class="stacked-bar" style="height:12px;margin:0 0 6px;"><div class="stacked-seg seg-pass" style="width:{{widthPct .Exact .Total}}%"></div><div class="stacked-seg seg-quarantine" style="width:{{widthPct .Relaxed .Total}}%"></div><div class="stacked-seg seg-none" style="width:{{widthPct .ThirdParty .Total}}%"></div></div>
+        {{if .ThirdPartyDomains}}<div class="footnote">Third-party signers: {{range $i, $d := .ThirdPartyDomains}}{{if $i}}, {{end}}<span class="mono">{{$d.Domain}}</span> ({{commaN $d.Messages}}){{end}}</div>{{end}}
+        {{if .Histogram}}<div class="footnote">Signatures per record: {{range $i, $h := .Histogram}}{{if $i}} · {{end}}{{$h.Signatures}} sig → {{commaN $h.Messages}} msgs{{end}}</div>{{end}}
+        {{else}}<div class="subtle">no signatures in this window</div>{{end}}
+        {{end}}
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card">
+        <div class="section-head"><h2>SPF raw &amp; scope <span class="subtle">{{metric "A4"}} · {{metric "A5"}}</span></h2></div>
+        <div class="u-label" style="margin-bottom:6px;">Raw SPF result</div>
+        {{if .SPFRaw}}
+        <div class="split"><span>pass {{pct0 .SPFRawPassPct}}%</span><span>{{range .SPFRaw}}{{if ne .Value "pass"}}{{.Value}} {{pct0 .Share}}% · {{end}}{{end}}</span></div>
+        <div class="hbar"><div style="width:{{pct0 .SPFRawPassPct}}%"></div></div>
+        {{else}}<div class="subtle">no raw SPF results</div>{{end}}
+        <div class="u-label" style="margin:14px 0 6px;">Scope split</div>
+        {{if .SPFScope}}
+        <div class="legend-row">{{range .SPFScope}}<span><span class="swatch" style="background:{{if eq .Value "mfrom"}}var(--ax-accent){{else}}var(--ax-neutral){{end}}"></span>{{.Value}} {{pct0 .Share}}% ({{commaN .Messages}})</span>{{end}}</div>
+        {{else}}<div class="subtle">—</div>{{end}}
+      </div>
+
+      <div class="card">
+        <div class="section-head"><h2>Envelope-from <span class="subtle">{{metric "A6"}}</span></h2><span class="section-sub">MAIL FROM vs header From</span></div>
+        {{if .EnvelopeFrom}}
+        <div class="table-wrap"><table class="data">
+          <thead><tr><th>Envelope from</th><th class="num">Messages</th><th>Pass rate</th><th>Alignment</th></tr></thead>
+          <tbody>
+          {{range .EnvelopeFrom}}
+          <tr>
+            <td class="mono-cell">{{if eq .Alignment "null_sender"}}<span style="color:var(--ax-fail)">&lt;&gt; null sender</span>{{else}}{{.EnvelopeFrom}}{{end}}</td>
+            <td class="num mono-cell">{{commaN .TotalMessages}}</td>
+            <td>{{pct0 .PassRate}}%</td>
+            <td><span class="badge {{if eq .Alignment "exact"}}pass{{else if eq .Alignment "relaxed"}}warn{{else if eq .Alignment "null_sender"}}neutral{{else}}fail{{end}}">{{.Alignment}}</span></td>
+          </tr>
+          {{end}}
+          </tbody>
+        </table></div>
+        {{else}}<div class="subtle">no envelope_from data</div>{{end}}
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb">
+    <div class="section-head"><h2>Alignment gap <span class="subtle">{{metric "A7"}}</span></h2></div>
+    {{with .AlignmentGap}}
+    {{if gt .Records 0}}
+    <p><b>{{commaN .Messages}}</b> messages ({{commaN .Records}} records) authenticated but did not align — DKIM {{commaN .DKIMMessages}}, SPF {{commaN .SPFMessages}}. This is a configuration issue (the signing or sending domain does not match the header From domain closely enough), not an attack.</p>
+    {{if .Pairs}}
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Check</th><th>Authenticated domain</th><th>Header from</th><th class="num">Messages</th><th class="num">Records</th></tr></thead>
+      <tbody>{{range .Pairs}}<tr><td><span class="badge neutral">{{.Kind}}</span></td><td class="mono-cell">{{.AuthDomain}}</td><td class="mono-cell">{{.HeaderFrom}}</td><td class="num mono-cell">{{commaN .Messages}}</td><td class="num mono-cell">{{.Records}}</td></tr>{{end}}</tbody>
+    </table></div>
+    {{end}}
+    {{else}}<div class="subtle">No alignment gap: every raw pass also aligned.</div>{{end}}
+    {{end}}
+    <div class="section-head" style="margin-top:16px;"><h3>DNS errors per reporter <span class="subtle">{{metric "A8"}}</span></h3><span class="section-sub">temperror + permerror share of raw results</span></div>
+    {{if .DNSErrors}}
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Reporter</th><th class="num">Raw results</th><th class="num">DNS errors</th><th>Rate</th><th>Status</th></tr></thead>
+      <tbody>{{range .DNSErrors}}<tr><td>{{.OrgName}}</td><td class="num mono-cell">{{commaN .Results}}</td><td class="num mono-cell">{{commaN .Errors}}</td><td class="mono-cell">{{pct1 .Rate}}%</td><td><span class="badge {{if gt .Rate 5.0}}warn{{else}}neutral{{end}}">{{if gt .Rate 5.0}}above 5%{{else}}normal{{end}}</span></td></tr>{{end}}</tbody>
+    </table></div>
+    {{else}}<div class="subtle">no raw results in this window</div>{{end}}
+  </div>
+</div>
+{{end}}

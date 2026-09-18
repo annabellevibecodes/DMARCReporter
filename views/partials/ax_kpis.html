@@ -1,0 +1,32 @@
+<div class="ax">
+  {{with .HealthKPI}}<div class="health-banner {{.Class}}">Health score <b>{{.Score}}/{{.Max}}</b> — <b>{{.Label}}</b> · {{.Summary}}{{if .Delta}} · <span class="delta {{.Delta.Dir}}">{{.Delta.Text}}</span>{{end}}</div>{{end}}
+  <div class="kpi-row{{if .HealthKPI}} five{{end}}">
+    {{range .KPIs}}
+    <div class="kpi{{if .Health}} health{{end}}">
+      <span class="u-label">{{.Label}}{{if .ID}} · {{metric .ID}}{{end}}</span>
+      <div class="kpi-value-row">
+        <div>
+          <div class="kpi-value">{{.Value}}</div>
+          {{if .Sub}}<div class="kpi-label-tag">{{.Sub}}</div>{{end}}
+        </div>
+        {{if .Delta}}<span class="delta {{.Delta.Dir}}" title="{{$.CompareLabel}}">{{.Delta.Text}}</span>{{end}}
+      </div>
+      {{if .Spark}}<div class="kpi-spark">{{.Spark}}</div>{{end}}
+    </div>
+    {{end}}
+    {{if .HealthKPI}}
+    <div class="kpi health">
+      <span class="u-label">Health score</span>
+      <div class="kpi-value-row">
+        <div>
+          <div class="kpi-value">{{.HealthKPI.Score}}<small>/100</small></div>
+          <div class="kpi-label-tag">{{.HealthKPI.Label}}</div>
+        </div>
+        {{if .HealthKPI.Delta}}<span class="delta {{.HealthKPI.Delta.Dir}}" title="{{$.CompareLabel}}">{{.HealthKPI.Delta.Text}}</span>{{end}}
+      </div>
+      <div class="footnote">{{.HealthKPI.Summary}}</div>
+    </div>
+    {{end}}
+  </div>
+  {{if .CompareLabel}}<div class="footnote" style="margin-top:-10px;margin-bottom:14px;">Deltas are {{.CompareLabel}}.</div>{{end}}
+</div>

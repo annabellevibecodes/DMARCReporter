@@ -21,12 +21,44 @@ func cutoffUnix(days int) int64 {
 type StatsFilter struct {
 	EnvelopeFrom string
 	Domain       string // filter by r.domain (DMARC policy domain)
+	SourceIP     string // filter by rr.source_ip
 	From         int64  // report date_range_begin >= From  (0 = no lower bound)
 	To           int64  // report date_range_begin <= To    (0 = no upper bound)
+	// Compare requests that handlers also compute the same query for the
+	// preceding window of equal length (see PreviousWindow / WithComparison).
+	Compare bool
 }
 
 // where builds a WHERE clause (with aliases r=reports, rr=record_rows) for the filter.
 func (f StatsFilter) where() (string, []any) {
+	clauses, args := f.clauses(true)
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+// whereNoTime is where() without the date constraints — used for "all-time"
+// facts about an entity (first/last seen) inside an otherwise scoped query.
+func (f StatsFilter) whereNoTime() (string, []any) {
+	clauses, args := f.clauses(false)
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+// andClauses returns the filter as "AND a AND b" fragments (no leading WHERE)
+// for queries that already have a WHERE.
+func (f StatsFilter) andClauses() (string, []any) {
+	clauses, args := f.clauses(true)
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return " AND " + strings.Join(clauses, " AND "), args
+}
+
+func (f StatsFilter) clauses(withTime bool) ([]string, []any) {
 	var clauses []string
 	var args []any
 	if f.EnvelopeFrom != "" {
@@ -37,38 +69,127 @@ func (f StatsFilter) where() (string, []any) {
 		clauses = append(clauses, "r.domain = ?")
 		args = append(args, f.Domain)
 	}
-	if f.From > 0 {
-		clauses = append(clauses, "r.date_range_begin >= ?")
-		args = append(args, f.From)
+	if f.SourceIP != "" {
+		clauses = append(clauses, "rr.source_ip = ?")
+		args = append(args, f.SourceIP)
 	}
+	if withTime {
+		if f.From > 0 {
+			clauses = append(clauses, "r.date_range_begin >= ?")
+			args = append(args, f.From)
+		}
+		if f.To > 0 {
+			clauses = append(clauses, "r.date_range_begin <= ?")
+			args = append(args, f.To)
+		}
+	}
+	return clauses, args
+}
+
+// WindowEnd returns the effective upper bound of the filter (To, or now).
+func (f StatsFilter) WindowEnd() int64 {
 	if f.To > 0 {
-		clauses = append(clauses, "r.date_range_begin <= ?")
-		args = append(args, f.To)
+		return f.To
 	}
-	if len(clauses) == 0 {
-		return "", nil
-	}
-	return " WHERE " + strings.Join(clauses, " AND "), args
+	return time.Now().Unix()
 }
 
-// DashboardStats holds summary numbers for the dashboard.
+// PreviousWindow returns a filter for the window of equal length immediately
+// preceding f. ok is false when f is unbounded (all time), in which case no
+// comparison is possible.
+func (f StatsFilter) PreviousWindow() (prev StatsFilter, ok bool) {
+	if f.From <= 0 {
+		return f, false
+	}
+	end := f.WindowEnd()
+	length := end - f.From
+	if length <= 0 {
+		return f, false
+	}
+	prev = f
+	prev.Compare = false
+	prev.To = f.From - 1
+	prev.From = f.From - length
+	if prev.From < 1 {
+		prev.From = 1
+	}
+	return prev, true
+}
+
+// Comparison pairs a value for the current window with the same value for
+// the preceding window (nil when f.Compare was false or no previous window exists).
+type Comparison[T any] struct {
+	Current  T
+	Previous *T
+}
+
+// WithComparison runs fn for f and, when f.Compare is set and a previous
+// window exists, again for the previous window.
+func WithComparison[T any](f StatsFilter, fn func(StatsFilter) (T, error)) (Comparison[T], error) {
+	var c Comparison[T]
+	cur, err := fn(f)
+	if err != nil {
+		return c, err
+	}
+	c.Current = cur
+	if !f.Compare {
+		return c, nil
+	}
+	prev, ok := f.PreviousWindow()
+	if !ok {
+		return c, nil
+	}
+	p, err := fn(prev)
+	if err != nil {
+		return c, err
+	}
+	c.Previous = &p
+	return c, nil
+}
+
+// DashboardStats holds summary numbers for the dashboard (C1–C4, C6).
 type DashboardStats struct {
-	TotalMessages  int64   `db:"total_messages"`
-	TotalReports   int64   `db:"total_reports"`
-	TotalDomains   int64   `db:"total_domains"`
-	TotalReporters int64   `db:"total_reporters"`
-	Passed         int64   `db:"passed"`
-	Failed         int64   `db:"failed"`
-	Quarantined    int64   `db:"quarantined"`
-	Rejected       int64   `db:"rejected"`
-	PassRate       float64 // computed
+	TotalMessages   int64   `db:"total_messages"`
+	TotalReports    int64   `db:"total_reports"`
+	TotalDomains    int64   `db:"total_domains"`
+	TotalReporters  int64   `db:"total_reporters"`
+	Passed          int64   `db:"passed"`
+	Failed          int64   `db:"failed"`
+	DKIMAlignedPass int64   `db:"dkim_aligned_pass"` // C3: policy_evaluated dkim = pass
+	SPFAlignedPass  int64   `db:"spf_aligned_pass"`  // C4: policy_evaluated spf = pass
+	DispositionNone int64   `db:"disposition_none"`  // C6
+	Quarantined     int64   `db:"quarantined"`
+	Rejected        int64   `db:"rejected"`
+	PassRate        float64 // computed, percent
+	DKIMPassRate    float64 // computed, percent
+	SPFPassRate     float64 // computed, percent
 }
 
-// FailureModeStats breaks down how messages fail DMARC.
+// FailureModeStats is the 2×2 authentication matrix (C5): how messages
+// combined aligned-DKIM and aligned-SPF results. The name predates BothPass;
+// GetAuthMatrix returns the same struct.
 type FailureModeStats struct {
+	BothPass     int64 `db:"both_pass"`
 	DKIMOnlyPass int64 `db:"dkim_only_pass"`
 	SPFOnlyPass  int64 `db:"spf_only_pass"`
 	BothFail     int64 `db:"both_fail"`
+}
+
+// AuthMatrix is the preferred name for the 2×2 matrix.
+type AuthMatrix = FailureModeStats
+
+// Total returns the sum of all four buckets.
+func (m FailureModeStats) Total() int64 {
+	return m.BothPass + m.DKIMOnlyPass + m.SPFOnlyPass + m.BothFail
+}
+
+// Share returns bucket/total in percent (0 when total is 0).
+func (m FailureModeStats) Share(bucket int64) float64 {
+	t := m.Total()
+	if t == 0 {
+		return 0
+	}
+	return float64(bucket) / float64(t) * 100
 }
 
 // FailureRateStat holds aggregate failure-rate stats for a source IP.
@@ -85,10 +206,15 @@ type FailureRateStat struct {
 // bucket label: an ISO week ("2026-31") or a date ("2026-08-01") depending on
 // the granularity the series was queried with.
 type TrendPoint struct {
-	Week   string `db:"week"`
-	Passed int64  `db:"passed"`
-	Failed int64  `db:"failed"`
+	Week       string `db:"week"`
+	Passed     int64  `db:"passed"`
+	Failed     int64  `db:"failed"`
+	DKIMPassed int64  `db:"dkim_passed"` // aligned DKIM pass (C3 series)
+	SPFPassed  int64  `db:"spf_passed"`  // aligned SPF pass (C4 series)
 }
+
+// Total returns passed+failed.
+func (p TrendPoint) Total() int64 { return p.Passed + p.Failed }
 
 // TrendDaily reports whether a period starting at from (Unix; 0 = all time)
 // is short enough to chart with daily rather than weekly buckets.
@@ -215,10 +341,14 @@ func GetDashboardStats(db *sqlx.DB, f StatsFilter) (*DashboardStats, error) {
 				THEN rr.count ELSE 0 END), 0) AS passed,
 			COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass'
 				THEN rr.count ELSE 0 END), 0) AS failed,
+			COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' THEN rr.count ELSE 0 END), 0) AS dkim_aligned_pass,
+			COALESCE(SUM(CASE WHEN rr.eval_spf = 'pass' THEN rr.count ELSE 0 END), 0) AS spf_aligned_pass,
 			COALESCE(SUM(CASE WHEN rr.disposition = 'quarantine'
 				THEN rr.count ELSE 0 END), 0) AS quarantined,
 			COALESCE(SUM(CASE WHEN rr.disposition = 'reject'
-				THEN rr.count ELSE 0 END), 0) AS rejected
+				THEN rr.count ELSE 0 END), 0) AS rejected,
+			COALESCE(SUM(CASE WHEN rr.disposition != 'quarantine' AND rr.disposition != 'reject'
+				THEN rr.count ELSE 0 END), 0) AS disposition_none
 		FROM reports r
 		JOIN record_rows rr ON rr.report_id = r.id`+where, args...)
 	if err != nil {
@@ -226,6 +356,8 @@ func GetDashboardStats(db *sqlx.DB, f StatsFilter) (*DashboardStats, error) {
 	}
 	if s.TotalMessages > 0 {
 		s.PassRate = float64(s.Passed) / float64(s.TotalMessages) * 100
+		s.DKIMPassRate = float64(s.DKIMAlignedPass) / float64(s.TotalMessages) * 100
+		s.SPFPassRate = float64(s.SPFAlignedPass) / float64(s.TotalMessages) * 100
 	}
 	return &s, nil
 }
@@ -240,7 +372,9 @@ func GetTrendData(db *sqlx.DB, f StatsFilter, daily bool) ([]TrendPoint, error) 
 			COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' OR rr.eval_spf = 'pass'
 				THEN rr.count ELSE 0 END), 0) AS passed,
 			COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass'
-				THEN rr.count ELSE 0 END), 0) AS failed
+				THEN rr.count ELSE 0 END), 0) AS failed,
+			COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' THEN rr.count ELSE 0 END), 0) AS dkim_passed,
+			COALESCE(SUM(CASE WHEN rr.eval_spf = 'pass' THEN rr.count ELSE 0 END), 0) AS spf_passed
 		FROM reports r
 		JOIN record_rows rr ON rr.report_id = r.id`+where+`
 		GROUP BY week
@@ -248,19 +382,25 @@ func GetTrendData(db *sqlx.DB, f StatsFilter, daily bool) ([]TrendPoint, error) 
 	return points, err
 }
 
-
-// GetFailureModeBreakdown returns a breakdown of how messages fail DMARC, scoped by f.
+// GetFailureModeBreakdown returns the full 2×2 authentication matrix (C5),
+// scoped by f. Kept under its original name for existing callers; see GetAuthMatrix.
 func GetFailureModeBreakdown(db *sqlx.DB, f StatsFilter) (*FailureModeStats, error) {
 	var s FailureModeStats
 	where, args := f.where()
 	err := db.Get(&s, `
 		SELECT
+			COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' AND rr.eval_spf = 'pass' THEN rr.count ELSE 0 END), 0) AS both_pass,
 			COALESCE(SUM(CASE WHEN rr.eval_dkim = 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END), 0) AS dkim_only_pass,
 			COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf = 'pass' THEN rr.count ELSE 0 END), 0) AS spf_only_pass,
 			COALESCE(SUM(CASE WHEN rr.eval_dkim != 'pass' AND rr.eval_spf != 'pass' THEN rr.count ELSE 0 END), 0) AS both_fail
 		FROM record_rows rr
 		JOIN reports r ON r.id = rr.report_id`+where, args...)
 	return &s, err
+}
+
+// GetAuthMatrix returns the 2×2 authentication matrix (C5) scoped by f.
+func GetAuthMatrix(db *sqlx.DB, f StatsFilter) (*AuthMatrix, error) {
+	return GetFailureModeBreakdown(db, f)
 }
 
 // GetTopFailingSources returns source IPs ordered by failure rate, scoped by f.
@@ -503,40 +643,6 @@ func GetDomainPolicyBreakdown(db *sqlx.DB, f StatsFilter) ([]PolicyBucket, error
 		GROUP BY policy
 		ORDER BY domain_count DESC`, args...)
 	return buckets, err
-}
-
-// DKIMSelectorStat holds aggregate stats for a DKIM selector observed in reports for a domain.
-type DKIMSelectorStat struct {
-	Selector      string  `db:"selector"`
-	SigningDomain string  `db:"signing_domain"`
-	Total         int64   `db:"total"`
-	Passed        int64   `db:"passed"`
-	Failed        int64   `db:"failed"`
-	PassRate      float64 `db:"pass_rate"`
-}
-
-// GetDKIMSelectorStats returns per-selector aggregate stats for all DKIM results tied to
-// record rows in reports for the given DMARC policy domain. Counts are weighted by the
-// record row's message count so a high-volume row is not equal to a single message.
-func GetDKIMSelectorStats(db *sqlx.DB, domain string) ([]DKIMSelectorStat, error) {
-	var stats []DKIMSelectorStat
-	err := db.Select(&stats, `
-		SELECT
-			dk.selector,
-			dk.domain AS signing_domain,
-			SUM(rr.count) AS total,
-			SUM(CASE WHEN dk.result = 'pass' THEN rr.count ELSE 0 END) AS passed,
-			SUM(CASE WHEN dk.result != 'pass' THEN rr.count ELSE 0 END) AS failed,
-			ROUND(100.0 * SUM(CASE WHEN dk.result = 'pass' THEN rr.count ELSE 0 END)
-				/ NULLIF(SUM(rr.count), 0), 1) AS pass_rate
-		FROM dkim_results dk
-		JOIN record_rows rr ON rr.id = dk.record_row_id
-		JOIN reports r ON r.id = rr.report_id
-		WHERE r.domain = ?
-		  AND dk.selector != ''
-		GROUP BY dk.selector, dk.domain
-		ORDER BY total DESC`, domain)
-	return stats, err
 }
 
 // GetDomainTrend returns pass/fail counts for a specific domain, bucketed daily or weekly.

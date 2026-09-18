@@ -1,0 +1,113 @@
+<h1>Reporters</h1>
+<p style="color:var(--pico-muted-color);">Who sends you aggregate reports, how promptly, and whether the data is clean.</p>
+
+<form method="GET" action="/reporters" style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;flex-wrap:wrap;">
+    <select name="period" data-autosubmit style="width:auto;margin:0;">
+        {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+    <select name="domain" data-autosubmit style="width:auto;margin:0;max-width:280px;">
+        <option value="">— all domains —</option>
+        {{range .Domains}}<option value="{{.}}"{{if eq . $.SelectedDomain}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+</form>
+
+{{with .R}}
+<div class="ax">
+  {{if .Gaps}}
+  <div class="partial-banner"><b>Coverage may be incomplete</b> <span class="subtle">{{metric "R2"}}</span> — {{range $i, $g := .Gaps}}{{if $i}}, {{end}}<b>{{$g.OrgName}}</b> (last window ended {{unixTime $g.LastEnd}}, {{$g.DaysSilent}}d ago){{end}} {{if eq (len .Gaps) 1}}has{{else}}have{{end}} sent no report in the last {{.GapDays}} days despite reporting within the last 14. Volume and rates may undercount recent activity.</div>
+  {{end}}
+
+  <div class="card mb">
+    <div class="section-head"><h2>Reporter inventory <span class="subtle">{{metric "R1"}} · {{metric "R2"}} · {{metric "R3"}}</span></h2><span class="section-sub">{{len .Reporters}} organisations · {{$.PeriodLabel}}</span></div>
+    {{if .Reporters}}
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Reporter</th><th class="num">Reports</th><th class="num">Messages</th><th class="num">Share</th><th>Schema</th><th>Latency (med / p95)</th><th>Last window</th><th>Coverage ({{.PresenceDays}}d)</th></tr></thead>
+      <tbody>
+      {{range .Reporters}}
+      <tr>
+        <td><a href="/reports/dmarc?org_name={{.OrgName}}">{{.OrgName}}</a>{{if .Email}}<div class="subtle">{{.Email}}</div>{{end}}</td>
+        <td class="num mono-cell">{{.Reports}}</td>
+        <td class="num mono-cell">{{commaN .Messages}}</td>
+        <td class="num mono-cell">{{pct1 .Share}}%</td>
+        <td class="mono-cell subtle" title="version / namespace">{{.Versions}} · {{.Namespaces}}</td>
+        <td class="mono-cell">{{if .LatencyN}}{{pct1 .LatencyMedian}}h / {{pct1 .LatencyP95}}h <span class="subtle">({{.LatencyN}})</span>{{else}}<span class="subtle">n/a</span>{{end}}</td>
+        <td class="subtle">{{unixTime .LastReport}} {{if .Gap}}<span class="badge fail">gap</span>{{else if le .DaysSilent 1}}<span class="badge pass">current</span>{{end}}</td>
+        <td>{{if .Presence}}<div class="heat-strip">{{range .Presence}}<div class="heat-cell {{if eq . 0}}heat-gap{{else if eq . 1}}heat-1{{else if eq . 2}}heat-2{{else}}heat-3{{end}}" title="{{.}} reports"></div>{{end}}</div>{{else}}<span class="subtle">—</span>{{end}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    <div class="footnote">Latency = mail received − report window end ({{metric "R3"}}); only reports with a known mail date count. Coverage strip: one cell per day by report window start, red = no report.</div>
+    {{else}}<div class="empty-state"><div class="glyph">◌</div>No reporters in this window.</div>{{end}}
+  </div>
+
+  <div class="grid even-col mb">
+    <div class="card">
+      <div class="section-head"><h2>Report hygiene</h2><span class="section-sub">since the start of the period</span></div>
+      <dl class="kv" style="grid-template-columns:1fr auto;">
+        <dt>Imported attachments</dt><dd>{{commaN .Hygiene.Imported}}</dd>
+        <dt>Duplicate reports <span class="subtle">{{metric "R5"}}</span></dt><dd>{{commaN .Hygiene.Duplicates}}</dd>
+        <dt>Malformed / parse errors <span class="subtle">{{metric "R6"}}</span></dt><dd>{{commaN .Hygiene.ParseErrors}}</dd>
+        <dt>Rejected (size cap)</dt><dd>{{commaN .Hygiene.Rejected}}</dd>
+        <dt>Date-range anomalies <span class="subtle">{{metric "R4"}}</span></dt><dd>{{.Hygiene.AnomalyCount}}</dd>
+      </dl>
+      {{if .Hygiene.RecentErrors}}
+      <details class="edit mt"><summary>Recent parse errors</summary>
+        <div class="table-wrap"><table class="data"><thead><tr><th>When</th><th>Source</th><th>File</th><th>Error</th></tr></thead>
+        <tbody>{{range .Hygiene.RecentErrors}}<tr><td class="subtle">{{unixDateTime .At}}</td><td>{{.Source}}</td><td class="mono-cell">{{.Filename}}</td><td class="subtle">{{.Error}}</td></tr>{{end}}</tbody></table></div>
+      </details>
+      {{end}}
+      {{if .Hygiene.Anomalies}}
+      <details class="edit mt"><summary>Date-range anomalies (window not 23–25h)</summary>
+        <div class="table-wrap"><table class="data"><thead><tr><th>Reporter</th><th>Domain</th><th>Window</th><th class="num">Hours</th></tr></thead>
+        <tbody>{{range .Hygiene.Anomalies}}<tr><td><a href="/reports/{{.ID}}">{{.OrgName}}</a></td><td class="mono-cell">{{.Domain}}</td><td class="subtle">{{unixDateTime .Begin}} → {{unixDateTime .End}}</td><td class="num mono-cell">{{pct1 .DurationHours}}</td></tr>{{end}}</tbody></table></div>
+      </details>
+      {{end}}
+      <div class="u-label" style="margin:14px 0 6px;">Schema versions seen <span class="subtle">{{metric "R6"}}</span></div>
+      {{if .Hygiene.Schema}}
+      <div class="table-wrap"><table class="data"><thead><tr><th>Version</th><th>Namespace</th><th class="num">Reports</th><th>Reporters</th></tr></thead>
+      <tbody>{{range .Hygiene.Schema}}<tr><td class="mono-cell">{{.Version}}</td><td class="mono-cell">{{.Namespace}}</td><td class="num mono-cell">{{.Reports}}</td><td class="subtle">{{.Reporters}}</td></tr>{{end}}</tbody></table></div>
+      {{else}}<div class="subtle">—</div>{{end}}
+    </div>
+
+    <div class="card">
+      <div class="section-head"><h2>Managed domains <span class="subtle">{{metric "R7"}}</span></h2><span class="section-sub">domains you consider yours</span></div>
+      {{if .Hygiene.Unmanaged}}
+      <div class="warn-strip"><b>Unmanaged domains seen in reports</b> — reporters sent data for domains that are not on your managed list:
+        {{range .Hygiene.Unmanaged}}
+        <div class="attn-row"><span class="sev-dot sev-info"></span>
+          <div class="attn-main"><a class="mono" href="/domains/{{.Domain}}">{{.Domain}}</a> <span class="subtle">{{.Reports}} reports · {{commaN .Messages}} msgs · {{unixTime .FirstSeen}} → {{unixTime .LastSeen}}</span></div>
+          <form method="POST" action="/api/managed-domains" style="margin:0;"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><input type="hidden" name="redirect" value="{{$.CurrentPath}}"><input type="hidden" name="domain" value="{{.Domain}}"><button class="small-btn primary" type="submit">+ manage</button></form>
+        </div>
+        {{end}}
+      </div>
+      {{else}}<div class="footnote" style="margin-bottom:10px;">Every domain in this window is on the managed list.</div>{{end}}
+      {{if .Managed}}
+      <div class="tag-list">
+        {{range .Managed}}
+        <form method="POST" action="/api/managed-domains/delete" style="margin:0;display:inline-flex;align-items:center;gap:4px;" class="tag">
+          <input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><input type="hidden" name="redirect" value="{{$.CurrentPath}}"><input type="hidden" name="domain" value="{{.Domain}}">
+          <a href="/domains/{{.Domain}}" style="text-decoration:none;">{{.Domain}}</a><button type="submit" class="link-btn" title="remove" style="text-decoration:none;">✕</button>
+        </form>
+        {{end}}
+      </div>
+      {{else}}<div class="subtle">No managed domains yet.</div>{{end}}
+      <form method="POST" action="/api/managed-domains" class="inline-edit mt">
+        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><input type="hidden" name="redirect" value="{{$.CurrentPath}}">
+        <input type="text" name="domain" placeholder="add a domain, e.g. example.com" maxlength="253" style="flex:1;min-width:200px;">
+        <button type="submit" class="small-btn primary">Add</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card mb">
+    <div class="section-head"><h2>Recipient domains <span class="subtle">{{metric "R8"}}</span></h2><span class="section-sub">envelope_to, supplied by some reporters only</span></div>
+    {{if .Recipients}}
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Recipient domain</th><th class="num">Messages</th><th class="num">Passed</th><th class="num">Failed</th><th>Pass rate</th></tr></thead>
+      <tbody>{{range .Recipients}}<tr><td><a href="/recipients/{{.EnvelopeTo}}">{{.EnvelopeTo}}</a></td><td class="num mono-cell">{{commaN .TotalMessages}}</td><td class="num mono-cell">{{commaN .Passed}}</td><td class="num mono-cell">{{commaN .Failed}}</td><td><span class="mini-bar"><span class="mini-bar-fill {{passClass .PassRate}}" style="width:{{pct0 .PassRate}}%"></span></span>{{pct1 .PassRate}}%</td></tr>{{end}}</tbody>
+    </table></div>
+    {{else}}<div class="footnote">No reporter in this window supplies envelope_to detail.</div>{{end}}
+  </div>
+</div>
+{{end}}

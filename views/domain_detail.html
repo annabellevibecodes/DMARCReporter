@@ -31,6 +31,12 @@
     </article>
 </div>
 
+{{with .HealthKPI}}<div class="ax"><div class="health-banner {{.Class}}">Health score <b>{{.Score}}/{{.Max}}</b> — <b>{{.Label}}</b> for {{$.Domain}} · {{.Summary}}{{if .Delta}} · <span class="delta {{.Delta.Dir}}">{{.Delta.Text}}</span> vs the preceding period{{end}} · <a href="{{$.AlertsLink}}">open alerts</a></div></div>{{end}}
+<div class="ax grid even-col mb">
+  <div class="card">{{template "partials/ax_matrix" .}}</div>
+  <div class="card">{{template "partials/ax_enforcement" .}}</div>
+</div>
+
 <article>
     <header>Live DMARC Record <small style="font-weight:normal;font-size:0.75em;opacity:0.6;">_dmarc.{{.Domain}}</small></header>
     {{if .DMARCRecord.Found}}
@@ -166,46 +172,20 @@
 </table>
 {{end}}
 
+<h2>Authentication <small style="font-size:0.75rem;font-weight:normal;color:var(--pico-muted-color);">({{metricRange "A1" "A8"}} · {{.PeriodLabel}})</small></h2>
 {{if .DKIMSelectors}}
 <article>
-    <header>DKIM Selectors</header>
-    <p style="font-size:0.85rem;color:var(--pico-muted-color);margin-bottom:0.75rem;">
-        Each selector represents a signing key used to authenticate outbound mail.
-        Selectors seen in DMARC reports are listed below with their pass/fail counts.
-    </p>
+    <header>DKIM Selectors — pass / fail by selector</header>
     <div style="max-height:280px;position:relative;">
         <canvas id="dkim-selector-chart"></canvas>
     </div>
     <script type="application/json" id="dkim-selector-data">{{.DKIMSelectorData}}</script>
-    <table style="margin-top:1.25rem;">
-        <thead>
-            <tr>
-                <th>Selector</th>
-                <th>Signing Domain</th>
-                <th>Uses</th>
-                <th>Passed</th>
-                <th>Failed</th>
-                <th>Pass Rate</th>
-            </tr>
-        </thead>
-        <tbody>
-        {{range .DKIMSelectors}}
-            <tr>
-                <td><code>{{.Selector}}</code></td>
-                <td>{{.SigningDomain}}</td>
-                <td>{{.Total}}</td>
-                <td>{{.Passed}}</td>
-                <td>{{.Failed}}</td>
-                <td>
-                    <progress class="pass-bar" value="{{printf "%.0f" .PassRate}}" max="100"></progress>
-                    <span class="badge {{if ge .PassRate 95.0}}badge-pass{{else if ge .PassRate 80.0}}badge-warn{{else}}badge-fail{{end}}">{{printf "%.1f" .PassRate}}%</span>
-                </td>
-            </tr>
-        {{end}}
-        </tbody>
-    </table>
 </article>
 {{end}}
+{{template "partials/ax_auth" .}}
+
+<h2>Policy <small style="font-size:0.75rem;font-weight:normal;color:var(--pico-muted-color);">({{metricRange "P1" "P6"}} · {{.PeriodLabel}})</small></h2>
+{{template "partials/ax_policy" .}}
 
 {{if .RecipientDomains}}
 <h2>Top Recipient Domains</h2>

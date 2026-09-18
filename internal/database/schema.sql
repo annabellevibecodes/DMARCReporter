@@ -18,6 +18,20 @@ CREATE TABLE IF NOT EXISTS reports (
     failure_options     TEXT    NOT NULL DEFAULT '0',
     imported_at         INTEGER NOT NULL DEFAULT (unixepoch()),
     source_filename     TEXT    NOT NULL DEFAULT '',
+    -- Columns below were added by the analytics extension. They are also
+    -- listed in db.go (reportColumns) so existing databases gain them via
+    -- ALTER TABLE on startup.
+    version             TEXT    NOT NULL DEFAULT '',   -- raw <version> text ('1.0', '0.1', '')
+    xml_namespace       TEXT    NOT NULL DEFAULT '',   -- '' or 'urn:ietf:params:xml:ns:dmarc-2.0'
+    np                  TEXT    NOT NULL DEFAULT '',   -- '' = not present (never defaulted to 'none')
+    discovery_method    TEXT    NOT NULL DEFAULT '',
+    testing             TEXT    NOT NULL DEFAULT '',
+    generator           TEXT    NOT NULL DEFAULT '',
+    report_errors       TEXT    NOT NULL DEFAULT '',   -- JSON array of <report_metadata><error>
+    received_at         INTEGER NOT NULL DEFAULT 0,    -- mail Date header; 0 for bare uploads
+    sp_present          INTEGER NOT NULL DEFAULT 0,    -- 1 when <sp> was in the XML
+    pct_present         INTEGER NOT NULL DEFAULT 0,    -- 1 when <pct> was in the XML
+    fo_present          INTEGER NOT NULL DEFAULT 0,    -- 1 when <fo> was in the XML
     UNIQUE (org_name, report_id)
 );
 
@@ -176,4 +190,81 @@ CREATE INDEX IF NOT EXISTS idx_tlsrpt_date_begin ON tlsrpt_reports(date_range_be
 CREATE TABLE IF NOT EXISTS alerts_sent (
     key     TEXT    PRIMARY KEY,
     sent_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+-- Key/value store for one-off migration markers (backfill done, seeds applied).
+CREATE TABLE IF NOT EXISTS app_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+);
+
+-- User-set labels and classification overrides for source IPs.
+CREATE TABLE IF NOT EXISTS ip_labels (
+    ip             TEXT    PRIMARY KEY,
+    label          TEXT    NOT NULL DEFAULT '',
+    classification TEXT    NOT NULL DEFAULT '',   -- '' | known_good | forwarder | unknown | suspicious
+    notes          TEXT    NOT NULL DEFAULT '',
+    updated_at     INTEGER NOT NULL DEFAULT 0
+);
+
+-- DKIM selector inventory, maintained on ingest (one row per signing domain +
+-- selector). first_seen / last_seen are report date_range_begin values so the
+-- table is reproducible from the stored XML. expected: -1 unset, 0 no, 1 yes.
+CREATE TABLE IF NOT EXISTS selectors (
+    domain     TEXT    NOT NULL,
+    selector   TEXT    NOT NULL,
+    first_seen INTEGER NOT NULL DEFAULT 0,
+    last_seen  INTEGER NOT NULL DEFAULT 0,
+    expected   INTEGER NOT NULL DEFAULT -1,
+    PRIMARY KEY (domain, selector)
+);
+
+-- Domains the operator considers their own. Seeded from reports.domain once.
+CREATE TABLE IF NOT EXISTS managed_domains (
+    domain   TEXT    PRIMARY KEY,
+    added_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+-- One row per attachment processed by any ingest path.
+CREATE TABLE IF NOT EXISTS ingest_events (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    at        INTEGER NOT NULL DEFAULT (unixepoch()),
+    source    TEXT    NOT NULL DEFAULT '',   -- upload | imap | graph
+    filename  TEXT    NOT NULL DEFAULT '',
+    kind      TEXT    NOT NULL DEFAULT '',   -- dmarc | tlsrpt | unknown
+    status    TEXT    NOT NULL DEFAULT '',   -- ok | duplicate | parse_error | rejected
+    org_name  TEXT    NOT NULL DEFAULT '',
+    report_id TEXT    NOT NULL DEFAULT '',
+    error     TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_events_at     ON ingest_events(at);
+CREATE INDEX IF NOT EXISTS idx_ingest_events_status ON ingest_events(status);
+
+-- Persisted, acknowledgeable alerts. alerts_sent stays for delivery dedupe.
+CREATE TABLE IF NOT EXISTS alerts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule            TEXT    NOT NULL,
+    domain          TEXT    NOT NULL DEFAULT '',
+    key             TEXT    NOT NULL DEFAULT '',
+    severity        TEXT    NOT NULL DEFAULT 'info',   -- info | warning | critical
+    message         TEXT    NOT NULL DEFAULT '',
+    first_fired     INTEGER NOT NULL DEFAULT 0,
+    last_fired      INTEGER NOT NULL DEFAULT 0,
+    count           INTEGER NOT NULL DEFAULT 1,
+    acknowledged_at INTEGER NOT NULL DEFAULT 0,
+    payload         TEXT    NOT NULL DEFAULT '',       -- JSON
+    UNIQUE (rule, domain, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_ack ON alerts(acknowledged_at);
+
+-- Resolved SPF authorisation per domain (all CIDRs the SPF record expands to).
+CREATE TABLE IF NOT EXISTS spf_authorized_cache (
+    domain     TEXT    PRIMARY KEY,
+    cidrs      TEXT    NOT NULL DEFAULT '[]',  -- JSON array of CIDR strings
+    lookups    INTEGER NOT NULL DEFAULT 0,
+    over_limit INTEGER NOT NULL DEFAULT 0,
+    error      TEXT    NOT NULL DEFAULT '',
+    checked_at INTEGER NOT NULL DEFAULT 0
 );

@@ -1,17 +1,14 @@
 package imap
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"log"
 
 	"github.com/emersion/go-sasl"
 	"github.com/jmoiron/sqlx"
 
 	"github.com/annabellevibecodes/dmarcreporter/internal/audit"
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
-	"github.com/annabellevibecodes/dmarcreporter/internal/parser"
+	"github.com/annabellevibecodes/dmarcreporter/internal/importer"
 )
 
 // IngestAccount connects to an account's IMAP server, fetches unexamined
@@ -67,46 +64,11 @@ func TestAccount(acc database.Account, password string, saslClient sasl.Client) 
 	return nil
 }
 
-// SaveAttachments parses and stores a batch of report attachments,
-// returning the number imported (duplicates and parse failures are skipped).
-func SaveAttachments(db *sqlx.DB, source string, attachments []Attachment) (int, error) {
-	imported := 0
-	for i, att := range attachments {
-		audit.Debug("imap[%s]: parsing attachment %d/%d filename=%q size=%d", source, i+1, len(attachments), att.Filename, len(att.Data))
-
-		if parser.IsTLSRPTFile(att.Filename) {
-			report, rawJSON, err := parser.ParseTLSRPT(att.Filename, bytes.NewReader(att.Data))
-			if err != nil {
-				log.Printf("ingest[%s]: skipping unparseable TLS report %q: %v", source, att.Filename, err)
-				continue
-			}
-			if _, err := database.SaveTLSRPT(db, report, att.Filename, rawJSON); err != nil {
-				if errors.Is(err, database.ErrDuplicate) {
-					audit.ReportDuplicate(att.Filename, report.OrganizationName, report.ReportID)
-					continue
-				}
-				return imported, fmt.Errorf("save TLS report %q: %w", att.Filename, err)
-			}
-			audit.ReportImported(att.Filename, report.OrganizationName, "(tlsrpt)", report.ReportID, len(report.Policies))
-			imported++
-			continue
-		}
-
-		fb, rawXML, err := parser.Parse(att.Filename, bytes.NewReader(att.Data))
-		if err != nil {
-			log.Printf("ingest[%s]: skipping unparseable attachment %q: %v", source, att.Filename, err)
-			continue
-		}
-		if _, err := database.SaveReport(db, fb, att.Filename, rawXML); err != nil {
-			if errors.Is(err, database.ErrDuplicate) {
-				audit.ReportDuplicate(att.Filename, fb.ReportMetadata.OrgName, fb.ReportMetadata.ReportID)
-				continue
-			}
-			return imported, fmt.Errorf("save report %q: %w", att.Filename, err)
-		}
-		audit.ReportImported(att.Filename, fb.ReportMetadata.OrgName,
-			fb.PolicyPublished.Domain, fb.ReportMetadata.ReportID, len(fb.Records))
-		imported++
-	}
-	return imported, nil
+// SaveAttachments parses and stores a batch of report attachments fetched over
+// IMAP, returning the number imported (duplicates and parse failures are
+// recorded in ingest_events and skipped). account is the account name used in
+// log lines.
+func SaveAttachments(db *sqlx.DB, account string, attachments []Attachment) (int, error) {
+	res, err := importer.SaveAttachments(db, database.IngestSourceIMAP, account, attachments)
+	return res.Imported, err
 }

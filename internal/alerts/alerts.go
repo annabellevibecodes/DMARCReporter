@@ -1,5 +1,6 @@
-// Package alerts evaluates alert conditions after ingest runs and delivers
-// notifications via webhook and/or SMTP email.
+// Package alerts evaluates a table of alert rules against the database,
+// persists every firing in the acknowledgeable `alerts` table and delivers
+// new (or re-opened) alerts via webhook and/or SMTP email.
 package alerts
 
 import (
@@ -9,7 +10,9 @@ import (
 	"log"
 	"net/http"
 	"net/smtp"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -20,11 +23,43 @@ import (
 
 var httpClient = &http.Client{Timeout: 15 * time.Second}
 
-// Alert is one notification event.
+// Alert is one firing of a rule. (Rule, Domain, Key) identifies the alert;
+// firing it again bumps the stored row instead of creating a new one.
 type Alert struct {
-	Type    string `json:"type"`    // "pass_rate_drop" | "new_failing_source"
-	Message string `json:"message"`
-	Detail  any    `json:"detail,omitempty"`
+	Rule     string         `json:"rule"`
+	Type     string         `json:"type"` // == Rule; kept for webhook consumers of the old payload
+	Domain   string         `json:"domain,omitempty"`
+	Key      string         `json:"key,omitempty"`
+	Severity string         `json:"severity"`
+	Message  string         `json:"message"`
+	Payload  map[string]any `json:"detail,omitempty"`
+	ID       int64          `json:"id,omitempty"`
+}
+
+// Context is what a rule gets to work with.
+type Context struct {
+	DB  *sqlx.DB
+	Cfg config.Config
+	Now time.Time
+}
+
+// Recent returns the Unix time `AlertRecentHours` ago (the window used by
+// "last 24h" rules; 48h by default because reports for a day arrive the next day).
+func (c *Context) Recent() int64 {
+	h := c.Cfg.AlertRecentHours
+	if h <= 0 {
+		h = 48
+	}
+	return c.Now.Add(-time.Duration(h) * time.Hour).Unix()
+}
+
+// Rule is one entry of the rule table.
+type Rule struct {
+	ID          string // X1 … X11
+	Name        string // rule name stored in alerts.rule
+	Description string
+	Threshold   func(cfg config.Config) string // human-readable threshold for the UI
+	Fn          func(c *Context) ([]Alert, error)
 }
 
 // Enabled reports whether any delivery channel is configured.
@@ -32,64 +67,98 @@ func Enabled(cfg config.Config) bool {
 	return cfg.AlertWebhookURL != "" || (cfg.SMTPHost != "" && cfg.SMTPTo != "")
 }
 
-// Evaluate checks alert conditions and delivers any new alerts. Alerts are
-// deduplicated via the alerts_sent table so re-running is safe.
+var evalMu sync.Mutex
+
+// Evaluate runs every rule, persists the results and delivers new alerts.
+// Safe to call from several goroutines; runs are serialised.
 func Evaluate(db *sqlx.DB, cfg config.Config) {
-	if !Enabled(cfg) {
-		return
+	fired, delivered := EvaluateWith(db, cfg, deliver)
+	if len(fired) > 0 {
+		log.Printf("alerts: %d rule firing(s), %d delivered", len(fired), len(delivered))
 	}
-	var alerts []Alert
+}
 
-	// Pass-rate drop: current 7 days vs the 7 days before that.
-	now := time.Now().UTC()
-	cur, err := database.GetPassRateWindow(db, now.AddDate(0, 0, -7).Unix(), now.Unix()+1)
-	if err == nil {
-		prev, err2 := database.GetPassRateWindow(db, now.AddDate(0, 0, -14).Unix(), now.AddDate(0, 0, -7).Unix())
-		// Require enough volume in both windows to be meaningful.
-		if err2 == nil && cur.TotalMessages >= 50 && prev.TotalMessages >= 50 {
-			drop := prev.Rate() - cur.Rate()
-			if drop > cfg.AlertPassRateDrop {
-				key := "passdrop:" + now.Format("2006-01-02")
-				if fresh, _ := database.MarkAlertSent(db, key); fresh {
-					alerts = append(alerts, Alert{
-						Type: "pass_rate_drop",
-						Message: fmt.Sprintf("DMARC pass rate dropped %.1f points week-over-week (%.1f%% → %.1f%%)",
-							drop, prev.Rate(), cur.Rate()),
-						Detail: map[string]any{
-							"previous_rate": prev.Rate(), "current_rate": cur.Rate(),
-							"previous_messages": prev.TotalMessages, "current_messages": cur.TotalMessages,
-						},
-					})
-				}
-			}
-		}
-	} else {
-		log.Printf("alerts: pass-rate query failed: %v", err)
-	}
+// EvaluateWith is Evaluate with an injectable delivery function (tests).
+// It returns every alert that fired and the subset handed to deliverFn.
+func EvaluateWith(db *sqlx.DB, cfg config.Config, deliverFn func(config.Config, []Alert)) (fired, delivered []Alert) {
+	evalMu.Lock()
+	defer evalMu.Unlock()
 
-	// New failing sources first seen in the last 48 hours.
-	sources, err := database.GetNewFailingSources(db, now.Add(-48*time.Hour).Unix())
-	if err != nil {
-		log.Printf("alerts: new-source query failed: %v", err)
-	}
-	for _, s := range sources {
-		key := "newsource:" + s.SourceIP
-		if fresh, _ := database.MarkAlertSent(db, key); !fresh {
+	ctx := &Context{DB: db, Cfg: cfg, Now: time.Now().UTC()}
+	for _, r := range Rules {
+		out, err := r.Fn(ctx)
+		if err != nil {
+			log.Printf("alerts: rule %s (%s) failed: %v", r.ID, r.Name, err)
 			continue
 		}
-		alerts = append(alerts, Alert{
-			Type: "new_failing_source",
-			Message: fmt.Sprintf("New source %s is failing DMARC (%d of %d messages failed)",
-				s.SourceIP, s.Failed, s.Total),
-			Detail: map[string]any{"source_ip": s.SourceIP, "failed": s.Failed, "total": s.Total},
-		})
+		for _, a := range out {
+			a.Rule = r.Name
+			a.Type = r.Name
+			if a.Severity == "" {
+				a.Severity = database.SeverityInfo
+			}
+			fired = append(fired, a)
+		}
 	}
 
-	if len(alerts) == 0 {
+	for i := range fired {
+		a := &fired[i]
+		payload, _ := json.Marshal(a.Payload)
+		shouldDeliver, id, err := database.UpsertAlert(db, database.Alert{
+			Rule: a.Rule, Domain: a.Domain, Key: a.Key, Severity: a.Severity, Message: a.Message, Payload: string(payload),
+		})
+		if err != nil {
+			log.Printf("alerts: persist %s/%s/%s: %v", a.Rule, a.Domain, a.Key, err)
+			continue
+		}
+		a.ID = id
+		if !shouldDeliver {
+			continue
+		}
+		// alerts_sent dedupes delivery to once per alert per day even across
+		// acknowledge / re-open cycles.
+		sentKey := fmt.Sprintf("%s|%s|%s|%s", a.Rule, a.Domain, a.Key, ctx.Now.Format("2006-01-02"))
+		if fresh, _ := database.MarkAlertSent(db, sentKey); !fresh {
+			continue
+		}
+		delivered = append(delivered, *a)
+	}
+
+	if len(delivered) > 0 && Enabled(cfg) && deliverFn != nil {
+		sort.SliceStable(delivered, func(i, j int) bool { return severityRank(delivered[i].Severity) < severityRank(delivered[j].Severity) })
+		deliverFn(cfg, delivered)
+	}
+	_ = database.PruneAlertsSent(db, 90*24*time.Hour)
+	return fired, delivered
+}
+
+func severityRank(s string) int {
+	switch s {
+	case database.SeverityCritical:
+		return 0
+	case database.SeverityWarning:
+		return 1
+	}
+	return 2
+}
+
+// StartScheduler evaluates the rules shortly after start-up and then every
+// interval, so time-based rules (silent reporters, missing selectors, …)
+// fire even when no new reports arrive.
+func StartScheduler(db *sqlx.DB, cfg config.Config, interval time.Duration) {
+	if interval <= 0 {
 		return
 	}
-	deliver(cfg, alerts)
-	_ = database.PruneAlertsSent(db, 90*24*time.Hour)
+	go func() {
+		time.Sleep(30 * time.Second)
+		Evaluate(db, cfg)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			Evaluate(db, cfg)
+		}
+	}()
+	log.Printf("alerts: scheduled evaluation every %s", interval)
 }
 
 func deliver(cfg config.Config, alerts []Alert) {
@@ -125,7 +194,11 @@ func sendEmail(cfg config.Config, alerts []Alert) error {
 	fmt.Fprintf(&body, "From: %s\r\nTo: %s\r\nSubject: [DMARC Reporter] %d alert(s)\r\n\r\n",
 		from, cfg.SMTPTo, len(alerts))
 	for _, a := range alerts {
-		fmt.Fprintf(&body, "- [%s] %s\r\n", a.Type, a.Message)
+		scope := ""
+		if a.Domain != "" {
+			scope = " " + a.Domain + ":"
+		}
+		fmt.Fprintf(&body, "- [%s] [%s]%s %s\r\n", strings.ToUpper(a.Severity), a.Rule, scope, a.Message)
 	}
 
 	addr := cfg.SMTPHost + ":" + cfg.SMTPPort
@@ -135,4 +208,14 @@ func sendEmail(cfg config.Config, alerts []Alert) error {
 	}
 	to := strings.Split(cfg.SMTPTo, ",")
 	return smtp.SendMail(addr, auth, from, to, []byte(body.String()))
+}
+
+// RuleByName returns the rule with the given stored name, or nil.
+func RuleByName(name string) *Rule {
+	for i := range Rules {
+		if Rules[i].Name == name {
+			return &Rules[i]
+		}
+	}
+	return nil
 }

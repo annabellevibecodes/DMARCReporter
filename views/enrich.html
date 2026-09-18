@@ -1,7 +1,10 @@
 <h1>Data Enrichment</h1>
 <p style="color:var(--pico-muted-color);">
-  Resolves reverse DNS and WHOIS data for all source IPs, and checks DMARC, BIMI, and MTA-STS
-  DNS records for all known domains. Results are cached and used across the dashboard.
+  Resolves reverse DNS and WHOIS data for all source IPs, checks DMARC, BIMI, and MTA-STS
+  DNS records for all known domains, and expands each domain's SPF record into the networks it
+  authorises (following include / redirect / a / mx, capped at 10 DNS lookups). Results are
+  cached and used across the dashboard; the SPF expansion powers the spoof-volume split and the
+  spoof-spike alert.
 </p>
 
 <article id="summary-card">
@@ -16,11 +19,15 @@
       <div style="font-size:0.85rem;color:var(--pico-muted-color);">domain(s) with missing or stale DNS checks</div>
     </div>
     <div>
+      <div style="font-size:2rem;font-weight:700;line-height:1;">{{.StaleSPF}}</div>
+      <div style="font-size:0.85rem;color:var(--pico-muted-color);">domain(s) with missing or stale SPF expansion (of {{.TotalSPF}})</div>
+    </div>
+    <div>
       <div style="font-size:2rem;font-weight:700;line-height:1;">{{.TotalDomains}}</div>
       <div style="font-size:0.85rem;color:var(--pico-muted-color);">total domain(s) tracked</div>
     </div>
   </div>
-  {{if and (eq .StaleIPs 0) (eq .StaleDomains 0) (not .EnrichRunning)}}
+  {{if and (eq .StaleIPs 0) (eq .StaleDomains 0) (eq .StaleSPF 0) (not .EnrichRunning)}}
   <p style="color:var(--pico-ins-color,#1a7f37);">&#10003; Everything is up to date. Click below to force a refresh.</p>
   {{end}}
   <form method="POST" action="/enrich/start" style="margin:0">
@@ -42,7 +49,7 @@
 <article>
   <header>Clear DNS cache</header>
   <p style="color:var(--pico-muted-color);margin-bottom:16px;">
-    Removes all cached IP geo/WHOIS data and domain DNS check results.
+    Removes all cached IP geo/WHOIS data, domain DNS check results and SPF expansions.
     The next enrichment run will re-fetch everything from scratch.
   </p>
   <form id="clear-form" method="POST" action="/enrich/clear">
@@ -59,7 +66,9 @@
      data-ip-done="{{.EnrichIPDone}}"
      data-ip-total="{{.EnrichIPTotal}}"
      data-domain-done="{{.EnrichDomainDone}}"
-     data-domain-total="{{.EnrichDomainTotal}}">
+     data-domain-total="{{.EnrichDomainTotal}}"
+     data-spf-done="{{.EnrichSPFDone}}"
+     data-spf-total="{{.EnrichSPFTotal}}">
   <article>
     <header>
       <span id="progress-title">Running&hellip;</span>
@@ -84,6 +93,16 @@
       </div>
       <progress id="domain-bar" value="0" max="1" style="width:100%;margin-bottom:8px;"></progress>
       <div id="domain-log" style="max-height:200px;overflow-y:auto;font-family:monospace;font-size:12px;background:var(--pico-code-background,#f4f4f4);padding:8px;border-radius:4px;"></div>
+    </div>
+
+    <!-- SPF progress -->
+    <div id="spf-section" style="display:none;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+        <strong>SPF record expansion</strong>
+        <span id="spf-counter" style="font-size:0.85rem;color:var(--pico-muted-color);"></span>
+      </div>
+      <progress id="spf-bar" value="0" max="1" style="width:100%;margin-bottom:8px;"></progress>
+      <div id="spf-log" style="max-height:200px;overflow-y:auto;font-family:monospace;font-size:12px;background:var(--pico-code-background,#f4f4f4);padding:8px;border-radius:4px;"></div>
     </div>
 
     <!-- Done banner -->

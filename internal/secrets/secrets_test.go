@@ -1,6 +1,9 @@
 package secrets
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -51,6 +54,46 @@ func TestKeyFileAutoCreateAndReuse(t *testing.T) {
 	dec, err := box2.Decrypt(enc)
 	if err != nil || string(dec) != "secret" {
 		t.Errorf("decrypt with reloaded key = %q, %v", dec, err)
+	}
+}
+
+// TestLegacyPassphraseCiphertextStillDecrypts checks that data sealed with the
+// pre-argon2 SHA-256 derivation is readable, and that new writes use the new key.
+func TestLegacyPassphraseCiphertextStillDecrypts(t *testing.T) {
+	const pass = "test-passphrase"
+	sum := sha256.Sum256([]byte(pass))
+	legacy, err := newAEAD(sum[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonce := make([]byte, legacy.NonceSize())
+	old := base64.StdEncoding.EncodeToString(legacy.Seal(nonce, nonce, []byte("old-secret"), nil))
+
+	box, err := Open(pass, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec, err := box.Decrypt(old)
+	if err != nil || string(dec) != "old-secret" {
+		t.Fatalf("legacy decrypt = %q, %v", dec, err)
+	}
+
+	enc, err := box.Encrypt([]byte("new-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := base64.StdEncoding.DecodeString(enc)
+	if _, err := legacy.Open(nil, raw[:legacy.NonceSize()], raw[legacy.NonceSize():], nil); err == nil {
+		t.Error("new ciphertext must not be decryptable with the legacy SHA-256 key")
+	}
+
+	// A hex key has no legacy fallback.
+	hexBox, err := Open(hex.EncodeToString(sum[:]), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hexBox.legacy != nil {
+		t.Error("hex key must not set up a legacy AEAD")
 	}
 }
 

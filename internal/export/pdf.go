@@ -9,21 +9,21 @@ import (
 )
 
 const (
-	pdfMargin    = 15.0
-	pdfPageW     = 210.0
-	pdfPageH     = 297.0
-	pdfBodyW     = pdfPageW - 2*pdfMargin
-	pdfRowH      = 6.5
-	pdfHeaderH   = 8.0
-	colorNavyR   = 14
-	colorNavyG   = 42
-	colorNavyB   = 74
-	colorGrayR   = 245
-	colorGrayG   = 245
-	colorGrayB   = 245
-	colorMutedR  = 100
-	colorMutedG  = 100
-	colorMutedB  = 100
+	pdfMargin   = 15.0
+	pdfPageW    = 210.0
+	pdfPageH    = 297.0
+	pdfBodyW    = pdfPageW - 2*pdfMargin
+	pdfRowH     = 6.5
+	pdfHeaderH  = 8.0
+	colorNavyR  = 14
+	colorNavyG  = 42
+	colorNavyB  = 74
+	colorGrayR  = 245
+	colorGrayG  = 245
+	colorGrayB  = 245
+	colorMutedR = 100
+	colorMutedG = 100
+	colorMutedB = 100
 )
 
 // WritePDF writes the report as a PDF to w.
@@ -150,6 +150,59 @@ func WritePDF(w io.Writer, rd *ReportData) error {
 			}
 		}
 		pdfTable(pdf, cols, rows)
+	}
+
+	// ---- Analytics sections ----
+	matrix, enforcement := analyticsKV(rd)
+	if len(matrix) > 0 {
+		pdf.Ln(6)
+		pdfSectionHeader(pdf, "Authentication Matrix")
+		pdfKVTable(pdf, matrix)
+	}
+	if len(enforcement) > 0 {
+		pdf.Ln(6)
+		pdfSectionHeader(pdf, "Enforcement Effectiveness")
+		pdfKVTable(pdf, enforcement)
+	}
+	if len(rd.PolicyTags) > 0 {
+		pdf.Ln(6)
+		pdfSectionHeader(pdf, "Published Policy")
+		pdfKVTable(pdf, [][2]string{{"Record", joinStrings(rd.PolicyTags, "  ")}})
+	}
+	if len(rd.DomainPolicies) > 0 {
+		pdf.Ln(6)
+		pdfSectionHeader(pdf, "Published Policy by Domain")
+		rows := make([][]string, len(rd.DomainPolicies))
+		for i, d := range rd.DomainPolicies {
+			rows[i] = []string{d.Domain, joinStrings(d.Tags, "  ")}
+		}
+		pdfTable(pdf, []pdfCol{{Header: "Domain", Width: 70, Align: "L"}, {Header: "Effective Record", Width: 105, Align: "L"}}, rows)
+	}
+	if rows := changeLogRows(rd); len(rows) > 0 {
+		pdf.Ln(6)
+		pdfSectionHeader(pdf, "Policy Change Log")
+		pdfTable(pdf, []pdfCol{
+			{Header: "Date", Width: 22, Align: "L"}, {Header: "Change", Width: 70, Align: "L"},
+			{Header: "Reporters", Width: 44, Align: "L"}, {Header: "Before", Width: 19, Align: "R"}, {Header: "After", Width: 20, Align: "R"},
+		}, rows)
+	}
+	if rows := newSourceRows(rd); len(rows) > 0 {
+		pdf.Ln(6)
+		pdfSectionHeader(pdf, "New Sources This Period")
+		pdfTable(pdf, []pdfCol{
+			{Header: "Source IP", Width: 42, Align: "L"}, {Header: "Label / Provider", Width: 40, Align: "L"},
+			{Header: "Pattern", Width: 26, Align: "L"}, {Header: "Messages", Width: 22, Align: "R"},
+			{Header: "Pass Rate", Width: 22, Align: "R"}, {Header: "First Seen", Width: 23, Align: "L"},
+		}, rows)
+	}
+	if rows := alertRows(rd); len(rows) > 0 {
+		pdf.Ln(6)
+		pdfSectionHeader(pdf, "Open Alerts")
+		pdfTable(pdf, []pdfCol{
+			{Header: "Sev", Width: 16, Align: "L"}, {Header: "Rule", Width: 30, Align: "L"},
+			{Header: "Domain", Width: 32, Align: "L"}, {Header: "Message", Width: 62, Align: "L"},
+			{Header: "First", Width: 17, Align: "L"}, {Header: "Last", Width: 17, Align: "L"}, {Header: "#", Width: 6, Align: "R"},
+		}, rows)
 	}
 
 	return pdf.Output(w)

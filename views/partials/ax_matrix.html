@@ -1,0 +1,45 @@
+{{/* Authentication matrix (C5). Expects .Overview.Matrix and .SourcesQuery */}}
+<div class="ax">
+  <div class="section-head">
+    <h2>Authentication matrix <span class="subtle">{{metric "C5"}}</span></h2>
+    <span class="section-sub">aligned DKIM × aligned SPF · click a cell to filter Sources</span>
+  </div>
+  {{with .Overview.Matrix}}
+  {{if gt .Total 0}}
+  <div class="matrix">
+    <a class="matrix-cell both" href="/sources?matrix=both&amp;{{$.SourcesQuery}}">
+      <div class="m-title">Both aligned</div>
+      <span class="m-num">{{commaN .BothPass}}</span><span class="m-share">{{pct1 .BothPassPct}}%</span>
+      <div class="m-cap">fully authenticated mail</div>
+    </a>
+    <a class="matrix-cell dkim" href="/sources?matrix=dkim&amp;{{$.SourcesQuery}}">
+      <div class="m-title">DKIM only</div>
+      <span class="m-num">{{commaN .DKIMOnly}}</span><span class="m-share">{{pct1 .DKIMOnlyPct}}%</span>
+      <div class="m-cap">typically forwarders and bounces</div>
+    </a>
+    <a class="matrix-cell spf" href="/sources?matrix=spf&amp;{{$.SourcesQuery}}">
+      <div class="m-title">SPF only</div>
+      <span class="m-num">{{commaN .SPFOnly}}</span><span class="m-share">{{pct1 .SPFOnlyPct}}%</span>
+      <div class="m-cap">unsigned or broken signing</div>
+    </a>
+    <a class="matrix-cell neither" href="/sources?matrix=neither&amp;{{$.SourcesQuery}}">
+      <div class="m-title">Neither</div>
+      <span class="m-num">{{commaN .Neither}}</span><span class="m-share">{{pct1 .NeitherPct}}%</span>
+      <div class="m-cap">rejected, misconfigured or spoofed</div>
+    </a>
+  </div>
+  {{else}}
+  <div class="empty-state"><div class="glyph">◌</div>No messages in this window.</div>
+  {{end}}
+  {{end}}
+  {{with .Overview}}{{if .Spoof}}{{if gt .Spoof.Total 0}}
+  <div class="callout {{if eq .SpoofStatus "not_resolved_yet"}}info{{else}}warn{{end}}" style="margin:12px 0 0;">
+    {{if eq .SpoofStatus "not_resolved_yet"}}
+      <b>SPF not resolved yet</b> <span class="subtle">{{metric "S4"}}</span> — run <a href="/enrich">Enrich</a> to expand your domains' SPF records; the "neither" cell will then be split into mail from inside vs outside SPF.
+    {{else}}
+      <span class="cnum">{{pct0 .Spoof.NotInSPFShare}}%</span> of unauthenticated ("neither") mail came from IPs <b>not in your SPF record</b> — the likelier spoofing signal. <span class="subtle">{{metric "S4"}}</span>
+      <div class="footnote">In SPF: {{commaN .Spoof.InSPF}} msgs · Not in SPF: {{commaN .Spoof.NotInSPF}} msgs{{if gt .Spoof.Unresolved 0}} · unresolved domains: {{commaN .Spoof.Unresolved}} msgs ({{range $i, $d := .Spoof.Domains}}{{if $i}}, {{end}}{{$d}}{{end}}){{end}}</div>
+    {{end}}
+  </div>
+  {{end}}{{end}}{{end}}
+</div>

@@ -21,14 +21,15 @@ const CacheTTL = 7 * 24 * time.Hour
 
 // Info holds resolved metadata for a single IP address.
 type Info struct {
-	IP          string
-	RDNS        string
-	WhoisOrg    string
-	WhoisNet    string
+	IP           string
+	RDNS         string
+	WhoisOrg     string
+	WhoisNet     string
 	WhoisCountry string
-	WhoisCIDR   string
-	WhoisAbuse  string
-	LookedUpAt  int64
+	WhoisCIDR    string
+	WhoisAbuse   string
+	WhoisASN     string // origin AS (e.g. "AS15169"), when the registry publishes it
+	LookedUpAt   int64
 }
 
 // Get returns cached IP info, performing a live lookup if the cache is missing or stale.
@@ -61,10 +62,11 @@ func load(db *sqlx.DB, ip string) (*Info, error) {
 		WhoisCountry string `db:"whois_country"`
 		WhoisCIDR    string `db:"whois_cidr"`
 		WhoisAbuse   string `db:"whois_abuse"`
+		WhoisASN     string `db:"whois_asn"`
 		LookedUpAt   int64  `db:"looked_up_at"`
 	}
 	err := db.Get(&row,
-		`SELECT ip, rdns, whois_org, whois_net, whois_country, whois_cidr, whois_abuse, looked_up_at
+		`SELECT ip, rdns, whois_org, whois_net, whois_country, whois_cidr, whois_abuse, whois_asn, looked_up_at
 		 FROM ip_info WHERE ip = ?`, ip)
 	if err != nil {
 		// Not found — return empty struct.
@@ -78,6 +80,7 @@ func load(db *sqlx.DB, ip string) (*Info, error) {
 		WhoisCountry: row.WhoisCountry,
 		WhoisCIDR:    row.WhoisCIDR,
 		WhoisAbuse:   row.WhoisAbuse,
+		WhoisASN:     row.WhoisASN,
 		LookedUpAt:   row.LookedUpAt,
 	}, nil
 }
@@ -85,8 +88,8 @@ func load(db *sqlx.DB, ip string) (*Info, error) {
 // save upserts an Info record into ip_info.
 func save(db *sqlx.DB, info *Info) error {
 	_, err := db.Exec(`
-		INSERT INTO ip_info (ip, rdns, whois_org, whois_net, whois_country, whois_cidr, whois_abuse, looked_up_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO ip_info (ip, rdns, whois_org, whois_net, whois_country, whois_cidr, whois_abuse, whois_asn, looked_up_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(ip) DO UPDATE SET
 			rdns          = excluded.rdns,
 			whois_org     = excluded.whois_org,
@@ -94,9 +97,10 @@ func save(db *sqlx.DB, info *Info) error {
 			whois_country = excluded.whois_country,
 			whois_cidr    = excluded.whois_cidr,
 			whois_abuse   = excluded.whois_abuse,
+			whois_asn     = excluded.whois_asn,
 			looked_up_at  = excluded.looked_up_at`,
 		info.IP, info.RDNS, info.WhoisOrg, info.WhoisNet,
-		info.WhoisCountry, info.WhoisCIDR, info.WhoisAbuse, info.LookedUpAt)
+		info.WhoisCountry, info.WhoisCIDR, info.WhoisAbuse, info.WhoisASN, info.LookedUpAt)
 	return err
 }
 
@@ -164,6 +168,17 @@ func parseWhois(raw string, info *Info) {
 
 	// CIDR / network range.
 	info.WhoisCIDR = get("CIDR", "inetnum", "NetRange")
+
+	// Origin AS (ARIN: OriginAS, RIPE/APNIC: origin / aut-num, LACNIC: aut-num).
+	if asn := get("OriginAS", "origin", "aut-num", "OriginAS"); asn != "" {
+		asn = strings.ToUpper(strings.TrimSpace(strings.Split(asn, ",")[0]))
+		if !strings.HasPrefix(asn, "AS") {
+			asn = "AS" + asn
+		}
+		if len(asn) <= 16 && len(asn) > 2 {
+			info.WhoisASN = asn
+		}
+	}
 
 	// Abuse contact.
 	info.WhoisAbuse = strings.TrimRight(get("OrgAbuseEmail", "abuse-mailbox", "AbuseEmail", "abuse-c"), "'\"`,;.")

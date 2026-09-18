@@ -13,8 +13,14 @@ A web application for parsing, storing, and visualising DMARC aggregate reports.
 - Account credentials are encrypted at rest (AES-256-GCM) with `SECRETS_KEY` or an auto-generated key file next to the database
 - Dashboard with pass/fail statistics, failure modes, top failing sources, policy-override ("forgiven failures") breakdown, and an adaptive trend chart (daily buckets for short periods, weekly beyond ~3 months, gaps filled)
 - Known-sender classification: source IPs are labelled with their provider (Google, Microsoft 365, SendGrid, …) from cached reverse DNS
-- Enrich page for bulk-refreshing reverse DNS/WHOIS (source IPs) and DMARC/BIMI/MTA-STS domain checks in the background, with live progress via Server-Sent Events; a run keeps going even if the browser tab is closed
-- Alerts on pass-rate drops and new failing sources, delivered via webhook and/or SMTP email
+- Enrich page for bulk-refreshing reverse DNS/WHOIS (source IPs), DMARC/BIMI/MTA-STS domain checks and SPF record expansion (include / redirect / a / mx / ip4 / ip6, capped at 10 lookups per RFC 7208, cached 24h) in the background, with live progress via Server-Sent Events; a run keeps going even if the browser tab is closed
+- Analytics: authentication matrix (both / DKIM-only / SPF-only / neither), disposition and enforcement effectiveness, unexplained policy overrides, deltas versus the preceding period, and a 0–100 health score per domain
+- Source intelligence: per-IP matrix, raw DKIM/SPF results, first/last seen, reporters, behaviour pattern (healthy / forwarder / broken signing / spoof suspect / mixed) with user labels, classifications and notes; spoof volume split by SPF membership
+- Authentication and policy analysis per domain: selector inventory with expected flags, signing alignment (exact / relaxed / third-party via the Public Suffix List), alignment gap, envelope-from alignment, DNS error rate per reporter, published-record consistency across reporters, change log with before/after pass rates, subdomain traffic, pct sampling, enforcement readiness
+- Reporters page: inventory, coverage strips and silent reporters, report latency, hygiene (duplicates, parse errors, odd window lengths), schema versions (RFC 7489 and DMARCbis `dmarc-2.0`), unmanaged domains, managed-domain list
+- Eleven persisted, acknowledgeable alert rules (new failing source, pass-rate drop per domain, known-good source degraded, new / missing selector, silent reporter, policy changed / inconsistent, DNS error spike, override spike, spoof spike) evaluated after every import and on a timer, delivered via webhook and/or SMTP email
+- DMARCbis (RFC 9989/9990) fields stored: namespace, `np`, `discovery_method`, `testing`, report version and `<error>` entries; absent `sp`/`pct`/`fo` distinguishable from explicit values
+- Ingest log: one row per processed attachment (imported / duplicate / parse error / rejected) and the mail `Date` header as `received_at`
 - Three UI themes — **Goth** (terminal), **Pink** (Y2K glam), **Blue** (newspaper) — switchable at any time, persisted via cookie
 - DKIM selector statistics (weighted by message volume) on domain and report detail pages
 - Management report export in CSV, XLSX, PDF, and DOCX, scoped to the selected reporting period and domain
@@ -110,11 +116,13 @@ All configuration is via environment variables. Every variable has a sensible de
 | `AUTH_USER` | `admin` | HTTP Basic Auth username |
 | `AUTH_PASSWORD` | _(required)_ | HTTP Basic Auth password. The application refuses to start unless this is set. |
 | `AUTH_DISABLED` | `false` | Set to `true` to run without authentication. **Development only — never use in production.** |
+| `AUTH_FAIL_MAX` | `10` | Failed login attempts per IP before that IP is locked out for `AUTH_FAIL_WINDOW` (0 to disable) |
+| `AUTH_FAIL_WINDOW` | `15m` | Lockout window for `AUTH_FAIL_MAX` (Go duration) |
 | `HSTS_ENABLED` | `false` | Set to `true` to send `Strict-Transport-Security` headers. Enable whenever the application is served over HTTPS. |
 | `UPLOAD_RATE_MAX` | `20` | Maximum file uploads per minute per IP (0 to disable) |
 | `FETCH_RATE_MAX` | `3` | Maximum fetch requests per 5 minutes per IP (0 to disable) |
 | `BASE_URL` | `http://localhost:<PORT>` | External base URL of the app; used to build the Google OAuth redirect URI |
-| `SECRETS_KEY` | _(unset)_ | Key for encrypting account credentials at rest (64-char hex, or any passphrase). When unset a random key is generated in `<DB_PATH>.key` (mode 0600). |
+| `SECRETS_KEY` | _(unset)_ | Key for encrypting account credentials at rest: a 64-char hex string is used as the raw key; any other value is treated as a passphrase and stretched with argon2id (secrets saved by older versions, which used plain SHA-256, remain readable and are migrated on their next save). When unset a random key is generated in `<DB_PATH>.key` (mode 0600). |
 | `FETCH_INTERVAL` | _(unset)_ | Background fetch interval (Go duration, e.g. `30m`, `4h`). Unset = manual fetch only. |
 | `IMAP_HOST` | _(unset)_ | Legacy single-account config: IMAP server hostname. Mirrored into the Accounts page on startup. |
 | `IMAP_PORT` | `993` | IMAP server port |
@@ -123,8 +131,21 @@ All configuration is via environment variables. Every variable has a sensible de
 | `IMAP_MAILBOX` | `INBOX` | Mailbox to fetch reports from |
 | `IMAP_PROCESSED_MAILBOX` | _(auto)_ | Mailbox to move processed emails to. When unset, derived from the server's hierarchy delimiter (`INBOX.Processed`, `INBOX/Processed`, …). |
 | `IMAP_TLS` | `true` | Use TLS. Set to `false` only for local testing. |
-| `ALERT_WEBHOOK_URL` | _(unset)_ | POST target for JSON alert notifications (pass-rate drop, new failing source) |
-| `ALERT_PASS_RATE_DROP` | `5.0` | Alert when the 7-day pass rate drops by more than this many percentage points week-over-week |
+| `ALERT_WEBHOOK_URL` | _(unset)_ | POST target for JSON alert notifications |
+| `ALERT_PASS_RATE_DROP` | `5.0` | X2: alert when a domain's 7-day pass rate drops by more than this many percentage points week-over-week |
+| `ALERT_EVAL_INTERVAL` | `24h` | How often alert rules run on the timer (they also run after every import) |
+| `ALERT_NEW_SOURCE_MIN` | `10` | X1: minimum messages before a new failing source alerts |
+| `ALERT_MIN_WINDOW_MESSAGES` | `50` | X2/X3: minimum messages in both windows for rate comparisons |
+| `ALERT_KNOWN_DROP` | `20` | X3: pass-rate drop (points) of a `known_good` source versus its 7-day baseline |
+| `ALERT_NEW_SELECTOR_HOURS` | `48` | X4: a selector first seen within this many hours is "new" |
+| `ALERT_SELECTOR_MISSING_DAYS` | `7` | X5: an expected selector unseen for this many days is "missing" |
+| `ALERT_REPORTER_GAP_DAYS` | `3` | X6: a reporter active in the last 14 days with no report window in this many days is "silent" |
+| `ALERT_DNS_ERROR_PCT` | `5` | X9: DNS temp/perm error share of a reporter's raw results |
+| `ALERT_OVERRIDE_SPIKE_FACTOR` | `3` | X10: policy-override volume above this multiple of the 7-day daily mean |
+| `ALERT_SPOOF_SPIKE_FACTOR` / `ALERT_SPOOF_ABS` | `3` / `50` | X11: not-in-SPF volume above this multiple of the daily mean, or above the absolute count |
+| `ALERT_RECENT_HOURS` | `48` | Window used by "last 24h" rules (reports for a day arrive the next day) |
+| `HEALTH_W_PASS_RATE` / `HEALTH_W_ENFORCEMENT` / `HEALTH_W_SPOOF` / `HEALTH_W_COVERAGE` / `HEALTH_W_ALERTS` | `40` / `25` / `15` / `10` / `10` | Health score component weights |
+| `PATTERN_HEALTHY_MIN` / `PATTERN_FORWARDER_MIN` / `PATTERN_BROKEN_SIGNING_MIN` / `PATTERN_SPOOF_MIN` / `PATTERN_SPOOF_MIN_MSGS` | `90` / `60` / `60` / `95` / `5` | Source pattern thresholds (percent of a source's messages; message floor for spoof suspects) |
 | `SMTP_HOST` / `SMTP_PORT` | _(unset)_ / `587` | SMTP relay for alert emails (disabled when host is unset) |
 | `SMTP_USER` / `SMTP_PASS` | _(unset)_ | SMTP credentials (optional) |
 | `SMTP_FROM` / `SMTP_TO` | _(unset)_ | Alert email sender and comma-separated recipients |
@@ -167,14 +188,30 @@ The subfolder is created automatically if it does not exist. Per-account status 
 | Report detail | `/reports/:id` | Individual report with per-IP record breakdown |
 | Domains | `/domains` | All domains with aggregate message counts |
 | Domain detail | `/domains/:domain` | Per-domain records across all reports |
-| Sources | `/sources` | All source IPs with provider labels, filterable by period, envelope-from, IP, and minimum message count |
-| Source detail | `/sources/:ip` | Per-IP records across all reports |
+| Sources | `/sources` | All source IPs with pattern, matrix, labels and first/last seen; filterable by period, envelope-from, IP, pattern, matrix cell, new-only and minimum message count; inline label editing |
+| Source detail | `/sources/:ip` | Per-IP matrix, raw results, timeline, selectors, identifiers, reporters, label/classification/notes |
+| Reporters | `/reporters` | Reporter inventory, coverage and latency, hygiene, schema versions, managed domains, recipient domains |
+| Alerts | `/alerts` | Open / acknowledged alerts with payloads, acknowledge buttons, rule table |
 | TLS reports | `/tlsrpt` | SMTP TLS reports (RFC 8460) with session success/failure counts |
 | Accounts | `/accounts` | Manage fetch mailboxes (IMAP / Gmail / Office 365) and view fetch status |
 | Enrich | `/enrich` | Bulk-refresh reverse DNS/WHOIS and domain DNS checks in the background, with live progress |
 | Export | `/export` | Management report download (CSV, XLSX, PDF, DOCX); optional `?domain=` and `?period=` filters |
 
-A JSON endpoint at `/api/stats?days=90` returns trend data for programmatic use.
+### JSON API
+
+All endpoints honour `period` (same values as the UI selector), `domain`, `ef` (envelope-from) and `compare=1` (also return the preceding window of equal length). Mutating endpoints take form-encoded bodies with the `_csrf` token of the page and accept a `redirect` field for use from HTML forms.
+
+| Endpoint | Content |
+|----------|---------|
+| `GET /api/stats`, `/api/failure-modes`, `/api/domain-trend`, `/api/top-failing-sources` | Original endpoints (failure-modes now includes `both_pass` and `total`) |
+| `GET /api/overview` | C1–C8, new-source count, health score, open alert count, previous window and deltas |
+| `GET /api/auth-matrix` | The 2×2 matrix with shares |
+| `GET /api/sources` (`sort`, `dir`, `pattern`, `matrix`, `new=1`, `min`, `q`, `limit`, `page`), `GET /api/sources/:ip`, `GET /api/new-sources`, `GET /api/spoof` | Source inventory, detail with timeline, new sources, spoof volume by SPF membership |
+| `GET /api/auth`, `GET /api/policy` | A1–A8 and P1–P6 in one payload each |
+| `GET /api/reporters`, `GET/POST/DELETE /api/managed-domains` | R1–R8; managed-domain list management |
+| `GET /api/alerts?state=open\|ack\|all`, `POST /api/alerts/:id/ack`, `POST /api/alerts/evaluate` | Persisted alerts, acknowledgement, on-demand evaluation |
+| `GET /api/health`, `GET /api/health/:domain` | Health score with components |
+| `POST /api/labels/:ip` (`label`, `classification`, `notes`), `POST /api/selectors/expected` (`domain`, `selector`, `expected`) | Source labels; selector expectations |
 
 ### Exporting a management report
 
@@ -263,7 +300,7 @@ The table below lists every connection the application makes or accepts. Use it 
 | `443` | TCP | server → | OAuth2 token endpoints (`oauth2.googleapis.com`, `login.microsoftonline.com`) | Only for Gmail/O365 OAuth accounts |
 | `443` | TCP | server → | Alert webhook delivery | Only when `ALERT_WEBHOOK_URL` is set |
 | `587` | TCP | server → | SMTP submission for alert emails | Only when `SMTP_HOST` is set |
-| `53` | UDP + TCP | server → | DNS — DMARC (`_dmarc.*`), BIMI (`default._bimi.*`), MTA-STS (`_mta-sts.*`) record lookups, and reverse DNS for source IPs; uses the system resolver | When the Enrich or Domain Detail features are used |
+| `53` | UDP + TCP | server → | DNS — DMARC (`_dmarc.*`), BIMI (`default._bimi.*`), MTA-STS (`_mta-sts.*`) record lookups, SPF expansion (TXT, A/AAAA, MX for each domain and its includes), and reverse DNS for source IPs; uses the system resolver | When the Enrich or Domain Detail features are used |
 | `43` | TCP | server → | WHOIS — organisation, country, network, and abuse-contact lookups for source IPs; connections go to the authoritative WHOIS server for each IP block (ARIN, RIPE, APNIC, LACNIC, AFRINIC, etc.) | When the Enrich or Source Detail features are used |
 
 ² Configurable via the `IMAP_PORT` environment variable.
@@ -273,7 +310,9 @@ The table below lists every connection the application makes or accepts. Use it 
 ## Security notes
 
 - `AUTH_PASSWORD` is required at startup; the application refuses to start without it unless `AUTH_DISABLED=true` is explicitly set (development only)
+- Repeated failed logins lock the client IP out for `AUTH_FAIL_WINDOW` (see `AUTH_FAIL_MAX`). When running behind a reverse proxy, configure Fiber's trusted-proxy settings or rate-limit at the proxy, since all clients otherwise share the proxy's IP
 - CSRF tokens are required on all state-mutating POST requests
+- Report content is untrusted (anyone can mail a report to the monitored mailbox): records whose `source_ip` is not a valid IP address are dropped at import, negative counts are clamped, and only reports up to 8 MB have their original XML kept for download (larger ones are still imported)
 - Flash messages use `HttpOnly`, `Secure`, and `SameSite=Lax` cookies
 - HTTP security headers are set on all responses (CSP, X-Frame-Options, Referrer-Policy, Permissions-Policy)
 - Uploaded and fetched files are limited to 10 MB before decompression; decompressed content is capped at 50 MB to prevent decompression bomb attacks

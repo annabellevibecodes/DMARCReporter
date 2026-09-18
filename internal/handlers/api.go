@@ -11,10 +11,12 @@ import (
 
 // apiStatsFilter builds a StatsFilter from the query parameters shared by all
 // API endpoints: period (same values as the UI selector), ef (envelope_from),
-// domain, and the legacy days parameter (used when period is absent).
+// domain, compare=1 (also compute the preceding window), and the legacy days
+// parameter (used when period is absent).
 func apiStatsFilter(c *fiber.Ctx) (database.StatsFilter, error) {
 	f := database.StatsFilter{
 		EnvelopeFrom: c.Query("ef"),
+		Compare:      c.Query("compare") == "1",
 	}
 	if domain := c.Query("domain"); domain != "" {
 		if len(domain) > 253 || !domainRe.MatchString(domain) {
@@ -74,9 +76,11 @@ func (a *App) HandleAPIFailureModes(c *fiber.Ctx) error {
 		return err
 	}
 	return c.JSON(fiber.Map{
+		"both_pass":      fm.BothPass,
 		"dkim_only_pass": fm.DKIMOnlyPass,
 		"spf_only_pass":  fm.SPFOnlyPass,
 		"both_fail":      fm.BothFail,
+		"total":          fm.Total(),
 	})
 }
 

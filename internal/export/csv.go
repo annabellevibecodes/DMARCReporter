@@ -87,6 +87,69 @@ func WriteCSV(w io.Writer, rd *ReportData) error {
 		}
 	}
 
+	// ---- Analytics sections (appended; earlier sections keep their column order) ----
+	matrix, enforcement := analyticsKV(rd)
+	if len(matrix) > 0 {
+		blank()
+		write("Authentication Matrix")
+		for _, kv := range matrix {
+			write(kv[0], kv[1])
+		}
+	}
+	if len(enforcement) > 0 {
+		blank()
+		write("Enforcement Effectiveness")
+		for _, kv := range enforcement {
+			write(kv[0], kv[1])
+		}
+	}
+	if len(rd.PolicyTags) > 0 {
+		blank()
+		write("Published Policy")
+		write("Record", escapeFormula(joinStrings(rd.PolicyTags, " ")))
+	}
+	if len(rd.DomainPolicies) > 0 {
+		blank()
+		write("Published Policy by Domain")
+		write("Domain", "Effective Record")
+		for _, d := range rd.DomainPolicies {
+			write(escapeFormula(d.Domain), escapeFormula(joinStrings(d.Tags, " ")))
+		}
+	}
+	if rows := changeLogRows(rd); len(rows) > 0 {
+		blank()
+		write("Policy Change Log")
+		write(changeLogHeaders...)
+		for _, r := range rows {
+			write(escapeRow(r)...)
+		}
+	}
+	if rows := newSourceRows(rd); len(rows) > 0 {
+		blank()
+		write("New Sources This Period")
+		write(newSourceHeaders...)
+		for _, r := range rows {
+			write(escapeRow(r)...)
+		}
+	}
+	if rows := alertRows(rd); len(rows) > 0 {
+		blank()
+		write("Open Alerts")
+		write(alertHeaders...)
+		for _, r := range rows {
+			write(escapeRow(r)...)
+		}
+	}
+
 	cw.Flush()
 	return cw.Error()
+}
+
+// escapeRow applies escapeFormula to every cell.
+func escapeRow(row []string) []string {
+	out := make([]string, len(row))
+	for i, c := range row {
+		out[i] = escapeFormula(c)
+	}
+	return out
 }

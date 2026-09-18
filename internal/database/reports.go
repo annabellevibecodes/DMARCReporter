@@ -14,6 +14,10 @@ import (
 // ErrDuplicate is returned when a report already exists (UNIQUE constraint).
 var ErrDuplicate = errors.New("report already imported")
 
+// MaxStoredXML is the largest raw report XML kept in report_xml (bytes).
+// Larger reports are still imported; only the original-XML download is unavailable.
+const MaxStoredXML = 8 * 1024 * 1024
+
 // ReportFilter holds optional filter parameters for ListReports.
 type ReportFilter struct {
 	Domain   string
@@ -30,34 +34,54 @@ type ReportFilter struct {
 // SaveReport stores a parsed DMARC report, all its records, and the raw XML in a transaction.
 // Returns the new report DB ID, or ErrDuplicate if already present.
 func SaveReport(db *sqlx.DB, fb *models.Feedback, filename string, rawXML []byte) (int64, error) {
+	return SaveReportAt(db, fb, filename, rawXML, 0)
+}
+
+// SaveReportAt is SaveReport with the time the carrying mail was received
+// (its Date header, Unix seconds; 0 when unknown, e.g. a bare file upload).
+func SaveReportAt(db *sqlx.DB, fb *models.Feedback, filename string, rawXML []byte, receivedAt int64) (int64, error) {
 	tx, err := db.Beginx()
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
 
+	pp := fb.PolicyPublished
 	res, err := tx.Exec(`
 		INSERT INTO reports
 			(org_name, email, extra_contact_info, report_id,
 			 date_range_begin, date_range_end,
 			 domain, adkim, aspf, policy, subdomain_policy, pct, failure_options,
-			 imported_at, source_filename)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			 imported_at, source_filename,
+			 version, xml_namespace, np, discovery_method, testing, generator, report_errors,
+			 received_at, sp_present, pct_present, fo_present)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		fb.ReportMetadata.OrgName,
 		fb.ReportMetadata.Email,
 		fb.ReportMetadata.ExtraContactInfo,
 		fb.ReportMetadata.ReportID,
 		fb.ReportMetadata.DateRange.Begin,
 		fb.ReportMetadata.DateRange.End,
-		fb.PolicyPublished.Domain,
-		fb.PolicyPublished.ADKIM,
-		fb.PolicyPublished.ASPF,
-		fb.PolicyPublished.Policy,
-		fb.PolicyPublished.SubdomainPolicy,
-		fb.PolicyPublished.Pct,
-		fb.PolicyPublished.FailureOptions,
+		pp.Domain,
+		pp.ADKIM,
+		pp.ASPF,
+		pp.Policy,
+		pp.SubdomainPolicy,
+		pp.Pct,
+		pp.FailureOptions,
 		time.Now().Unix(),
 		filename,
+		fb.VersionText(),
+		fb.Namespace(),
+		pp.NP,
+		pp.DiscoveryMethod,
+		pp.Testing,
+		fb.ReportMetadata.Generator,
+		errorsJSON(fb.ReportMetadata.Errors),
+		receivedAt,
+		boolInt(pp.SPPresent),
+		boolInt(pp.PctPresent),
+		boolInt(pp.FOPresent),
 	)
 	if err != nil {
 		if isUniqueConstraint(err) {
@@ -120,11 +144,20 @@ func SaveReport(db *sqlx.DB, fb *models.Feedback, filename string, rawXML []byte
 		}
 	}
 
-	if len(rawXML) > 0 {
+	// Keep the original XML for download, but not at any size: the parser
+	// accepts up to 50 MB decompressed, and anyone who can mail the monitored
+	// mailbox could otherwise grow the database by that much per message.
+	// Real aggregate reports are a few KB to a few MB; the parsed rows are
+	// stored regardless.
+	if len(rawXML) > 0 && len(rawXML) <= MaxStoredXML {
 		if _, err := tx.Exec(`INSERT INTO report_xml (report_id, xml_data) VALUES (?, ?)`,
 			reportID, string(rawXML)); err != nil {
 			return 0, fmt.Errorf("insert report_xml: %w", err)
 		}
+	}
+
+	if err := upsertSelectors(tx, fb); err != nil {
+		return 0, fmt.Errorf("upsert selectors: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {

@@ -1,38 +1,35 @@
 package imap
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 
 	imapc "github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/emersion/go-message/mail"
 	"github.com/jmoiron/sqlx"
 
 	"github.com/annabellevibecodes/dmarcreporter/internal/audit"
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
+	"github.com/annabellevibecodes/dmarcreporter/internal/importer"
 	"github.com/annabellevibecodes/dmarcreporter/internal/parser"
 )
 
 // Attachment holds the raw bytes and filename of a report attachment
-// (DMARC aggregate XML or TLS-RPT JSON, possibly compressed).
-type Attachment struct {
-	Filename string
-	Data     []byte
-}
+// (DMARC aggregate XML or TLS-RPT JSON, possibly compressed). It is the
+// importer's Attachment type; the alias keeps the Graph fetcher and older
+// callers compiling.
+type Attachment = importer.Attachment
 
 // candidateMediaTypes are MIME types under which report attachments arrive
 // when the filename alone is not conclusive.
 var candidateMediaTypes = map[string]bool{
-	"application/gzip":         true,
-	"application/x-gzip":       true,
-	"application/zip":          true,
+	"application/gzip":             true,
+	"application/x-gzip":           true,
+	"application/zip":              true,
 	"application/x-zip-compressed": true,
-	"text/xml":                 true,
-	"application/xml":          true,
-	"application/tlsrpt+json":  true,
-	"application/tlsrpt+gzip":  true,
+	"text/xml":                     true,
+	"application/xml":              true,
+	"application/tlsrpt+json":      true,
+	"application/tlsrpt+gzip":      true,
 }
 
 // FetchReports fetches messages from srcMailbox that have not been examined
@@ -227,69 +224,21 @@ func hasCandidatePart(bs imapc.BodyStructure) bool {
 	return found
 }
 
-// extractAttachments parses an RFC 2822 message and returns report attachments.
+// extractAttachments parses an RFC 2822 message and returns report attachments,
+// each stamped with the message's Date header.
 func extractAttachments(raw []byte) ([]Attachment, error) {
-	mr, err := mail.CreateReader(bytes.NewReader(raw))
+	parts, _, err := parser.ExtractEMLAttachments(raw, func(format string, args ...any) {
+		audit.Debug("imap: "+format, args...)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("parse mail: %w", err)
+		return nil, err
 	}
-
-	var attachments []Attachment
-	partNum := 0
-	for {
-		part, err := mr.NextPart()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			audit.Debug("imap: extractAttachments NextPart error: %v", err)
-			break
-		}
-		partNum++
-
-		// Accept both attachment and inline parts — many DMARC senders use
-		// Content-Disposition: inline or text/xml without a disposition header,
-		// which the mail library classifies as InlineHeader (no Filename helper).
-		var filename string
-		switch h := part.Header.(type) {
-		case *mail.AttachmentHeader:
-			filename, _ = h.Filename()
-			audit.Debug("imap: part #%d type=AttachmentHeader filename=%q", partNum, filename)
-		case *mail.InlineHeader:
-			// Extract filename from Content-Disposition, then fall back to
-			// the Content-Type "name" parameter (both are commonly used).
-			_, params, _ := h.ContentDisposition()
-			filename = params["filename"]
-			if filename == "" {
-				_, params, _ = h.ContentType()
-				filename = params["name"]
-			}
-			ct, _, _ := h.ContentType()
-			audit.Debug("imap: part #%d type=InlineHeader content-type=%q filename=%q", partNum, ct, filename)
-		default:
-			audit.Debug("imap: part #%d type=%T — skipping", partNum, part.Header)
-			continue
-		}
-
-		if !parser.IsDMARCFile(filename) && !parser.IsTLSRPTFile(filename) {
-			audit.Debug("imap: part #%d filename=%q — not a report attachment, skipping", partNum, filename)
-			continue
-		}
-
-		const maxAttachmentSize = 10 * 1024 * 1024
-		data, err := io.ReadAll(io.LimitReader(part.Body, maxAttachmentSize+1))
-		if err != nil {
-			audit.Debug("imap: part #%d filename=%q read error: %v", partNum, filename, err)
-			continue
-		}
-		if int64(len(data)) > maxAttachmentSize {
-			audit.Debug("imap: part #%d filename=%q exceeds %d byte limit, skipping", partNum, filename, maxAttachmentSize)
-			continue
-		}
-		audit.Debug("imap: part #%d filename=%q size=%d bytes — accepted", partNum, filename, len(data))
+	attachments := make([]Attachment, 0, len(parts))
+	for _, p := range parts {
 		attachments = append(attachments, Attachment{
-			Filename: filename,
-			Data:     data,
+			Filename:   p.Filename,
+			Data:       p.Data,
+			ReceivedAt: p.ReceivedAt,
 		})
 	}
 	return attachments, nil

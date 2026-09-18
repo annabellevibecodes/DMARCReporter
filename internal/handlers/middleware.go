@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"net/url"
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/jmoiron/sqlx"
 
@@ -72,6 +75,21 @@ func pageWindow(page, totalPages int) []int {
 		pages[i] = start + i
 	}
 	return pages
+}
+
+// safeRedirect reports whether s is a local, path-only redirect target.
+// Besides the obvious "//host" form it rejects backslashes (browsers
+// normalise "/\host" to "//host") and anything url.Parse sees as having a
+// scheme or host.
+func safeRedirect(s string) bool {
+	if s == "" || s[0] != '/' || strings.HasPrefix(s, "//") || strings.ContainsAny(s, `\`) {
+		return false
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil {
+		return false
+	}
+	return true
 }
 
 // setFlash stores a flash message in response cookies.

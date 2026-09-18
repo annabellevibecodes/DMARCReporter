@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"html/template"
+	"net/url"
 	"sort"
 	"time"
 
@@ -31,6 +33,16 @@ var periodOptions = []PeriodOption{
 	{"3d", "Last 3 Days"},
 	{"2d", "Last 2 Days"},
 	{"24h", "Last 24 Hours"},
+}
+
+// validPeriod reports whether p is one of the period selector keys.
+func validPeriod(p string) bool {
+	for _, o := range periodOptions {
+		if o.Value == p {
+			return true
+		}
+	}
+	return false
 }
 
 // parsePeriod converts a period string into from/to Unix timestamps and a display label.
@@ -73,7 +85,7 @@ func (a *App) HandleDashboard(c *fiber.Ctx) error {
 	period := c.Query("period", "1y")
 
 	from, to, periodLabel := parsePeriod(period)
-	f := database.StatsFilter{EnvelopeFrom: envelopeFrom, From: from, To: to}
+	f := database.StatsFilter{EnvelopeFrom: envelopeFrom, From: from, To: to, Compare: true}
 
 	stats, err := database.GetDashboardStats(a.DB, f)
 	if err != nil {
@@ -86,6 +98,30 @@ func (a *App) HandleDashboard(c *fiber.Ctx) error {
 		return err
 	}
 	trend = database.FillTrendGaps(trend, from, to, trendDaily)
+
+	// Analytics blocks (C1–C8, S2): current window plus the preceding window
+	// of equal length for the KPI deltas.
+	ov, err := database.WithComparison(f, func(sf database.StatsFilter) (*overviewMetrics, error) {
+		return a.computeOverview(sf)
+	})
+	if err != nil {
+		return err
+	}
+	var prevOverview *overviewMetrics
+	if ov.Previous != nil {
+		prevOverview = *ov.Previous
+	}
+	delta := computeDelta(ov.Current, prevOverview)
+	kpis := buildKPIs(ov.Current, delta, trend)
+	compareLabel := ""
+	if prevOverview != nil {
+		compareLabel = "vs the preceding " + periodLength(from, to)
+	}
+	attention := a.buildAttention(ov.Current, f)
+	sourcesQuery := "period=" + url.QueryEscape(period)
+	if envelopeFrom != "" {
+		sourcesQuery += "&envelope_from=" + url.QueryEscape(envelopeFrom)
+	}
 
 	failureModes, err := database.GetFailureModeBreakdown(a.DB, f)
 	if err != nil {
@@ -283,5 +319,132 @@ func (a *App) HandleDashboard(c *fiber.Ctx) error {
 		"FlashKind":         flashKind,
 		"FlashMsg":          flashMsg,
 		"CSRFToken":         c.Locals("csrf"),
+		// Analytics blocks
+		"Overview":     ov.Current,
+		"OverviewPrev": prevOverview,
+		"Delta":        delta,
+		"KPIs":         kpis,
+		"CompareLabel": compareLabel,
+		"Attention":    attention,
+		"SourcesQuery": template.URL(sourcesQuery),
+		"AlertsLink":   "/alerts?state=open",
+		"HealthKPI":    a.healthKPIFor("", f),
 	}, layout)
+}
+
+// periodLength describes the window length for the comparison label.
+func periodLength(from, to int64) string {
+	if from <= 0 {
+		return "period"
+	}
+	end := to
+	if end <= 0 {
+		end = time.Now().Unix()
+	}
+	days := int((end - from + 43200) / 86400)
+	switch {
+	case days <= 1:
+		return "24 hours"
+	case days < 60:
+		return fmt.Sprintf("%d days", days)
+	case days < 400:
+		return fmt.Sprintf("%d months", int(float64(days)/30.4+0.5))
+	}
+	return fmt.Sprintf("%d years", int(float64(days)/365+0.5))
+}
+
+// buildAttention assembles the "needs attention" items from the overview
+// (new sources, unexplained overrides, override volume). Later phases prepend
+// open alerts via attentionExtras.
+func (a *App) buildAttention(ov *overviewMetrics, f database.StatsFilter) []attentionItem {
+	var items []attentionItem
+	if attentionExtras != nil {
+		items = append(items, attentionExtras(a, f)...)
+	}
+	if ov.Matrix.Neither > 0 && ov.Matrix.NeitherPct >= 5 {
+		items = append(items, attentionItem{
+			Severity: "warning",
+			Title:    fmt.Sprintf("%s messages (%.1f%%) failed both aligned checks", commaN(ov.Matrix.Neither), ov.Matrix.NeitherPct),
+			Sub:      "Unauthenticated mail claiming your domains — misconfigured senders or spoofing",
+			Tag:      "C5", Href: "/sources?matrix=neither&period=" + url.QueryEscape(periodFromFilter(f)),
+		})
+	}
+	if ov.NewSources > 0 {
+		sub := "sending IPs seen for the first time in this period"
+		if n := len(ov.NewSourceList); n > 0 {
+			top := ov.NewSourceList[0]
+			label := top.SourceIP
+			if top.Label != "" {
+				label = top.Label
+			} else if top.Provider != "" {
+				label = top.SourceIP + " (" + top.Provider + ")"
+			}
+			sub = fmt.Sprintf("largest: %s with %s messages · %s", label, commaN(top.TotalMessages), ipinfo.PatternLabel(top.Pattern))
+		}
+		items = append(items, attentionItem{
+			Severity: "info",
+			Title:    fmt.Sprintf("%d new source%s this period", ov.NewSources, plural(ov.NewSources)),
+			Sub:      sub,
+			Tag:      "S2", Href: "/sources?new=1&period=" + url.QueryEscape(periodFromFilter(f)),
+		})
+	}
+	if ov.UnexplainedOverrides != nil && ov.UnexplainedOverrides.Records > 0 {
+		items = append(items, attentionItem{
+			Severity: "warning",
+			Title:    fmt.Sprintf("%s failing messages delivered against policy without a reason", commaN(ov.UnexplainedOverrides.Messages)),
+			Sub:      "Receivers reported a disposition weaker than your published p= and gave no <reason>",
+			Tag:      "C8",
+		})
+	}
+	if ov.OverrideMessages > 0 {
+		items = append(items, attentionItem{
+			Severity: "info",
+			Title:    fmt.Sprintf("%s policy overrides applied", commaN(ov.OverrideMessages)),
+			Sub:      "\"Forgiven failures\" — messages a reporter delivered despite a DMARC fail",
+			Tag:      "C8",
+		})
+	}
+	if len(items) > 8 {
+		items = items[:8]
+	}
+	return items
+}
+
+// attentionExtras is set by later phases to prepend open alerts.
+var attentionExtras func(a *App, f database.StatsFilter) []attentionItem
+
+// periodFromFilter recovers the closest period key for links (best effort).
+func periodFromFilter(f database.StatsFilter) string {
+	if f.From <= 0 {
+		return "all"
+	}
+	days := int((time.Now().Unix() - f.From + 43200) / 86400)
+	switch {
+	case days <= 1:
+		return "24h"
+	case days <= 2:
+		return "2d"
+	case days <= 3:
+		return "3d"
+	case days <= 7:
+		return "7d"
+	case days <= 14:
+		return "14d"
+	case days <= 31:
+		return "30d"
+	case days <= 93:
+		return "3m"
+	case days <= 185:
+		return "6m"
+	case days <= 370:
+		return "1y"
+	}
+	return "2y"
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }

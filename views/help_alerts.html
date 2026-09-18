@@ -1,0 +1,64 @@
+<h1>Help &amp; Reference <small style="font-size:0.8rem;font-weight:normal;color:var(--pico-muted-color);">&middot; {{.HelpTitle}}</small></h1>
+<p style="color:var(--pico-muted-color);">{{.HelpBlurb}}</p>
+
+{{template "partials/help_nav" .}}
+
+<nav style="margin-bottom:2rem;"><small><a href="#alerts">Alert rules</a> &middot; <a href="#health">Health score</a></small></nav>
+
+<article id="alerts">
+  <header><strong>Alerts</strong></header>
+  <p>
+    Alert rules run after every import (upload or mailbox fetch) and on a timer
+    (<code>ALERT_EVAL_INTERVAL</code>, default 24h) so time-based rules fire even when no new
+    report arrives. Every firing is recorded on the <a href="/alerts">Alerts</a> page, where it can be
+    acknowledged; when <code>ALERT_WEBHOOK_URL</code> and/or <code>SMTP_HOST</code> are configured,
+    new alerts are also delivered as JSON or email. An alert is identified by rule + domain + key:
+    firing again bumps its count and "last fired" instead of creating a duplicate, and an
+    acknowledged alert re-opens (and is delivered again) only when the condition fires after the
+    acknowledgement. Delivery is limited to once per alert per day.
+  </p>
+  <table>
+    <thead><tr><th>Rule</th><th>Condition</th><th>Threshold (env)</th></tr></thead>
+    <tbody>
+      <tr><td>X1 <code>new_failing_source</code></td><td>A source IP first seen in the last 48h is failing DMARC for a domain</td><td><code>ALERT_NEW_SOURCE_MIN</code> messages (10)</td></tr>
+      <tr><td>X2 <code>pass_rate_drop</code></td><td>A domain's 7-day pass rate fell versus the previous 7 days</td><td><code>ALERT_PASS_RATE_DROP</code> points (5), <code>ALERT_MIN_WINDOW_MESSAGES</code> (50)</td></tr>
+      <tr><td>X3 <code>known_source_degraded</code></td><td>A source labelled <em>known_good</em> passes far less than its 7-day baseline</td><td><code>ALERT_KNOWN_DROP</code> points (20)</td></tr>
+      <tr><td>X4 <code>new_selector</code></td><td>A DKIM selector not marked <em>expected</em> started signing</td><td><code>ALERT_NEW_SELECTOR_HOURS</code> (48)</td></tr>
+      <tr><td>X5 <code>selector_missing</code></td><td>A selector marked <em>expected</em> has not signed recently</td><td><code>ALERT_SELECTOR_MISSING_DAYS</code> (7)</td></tr>
+      <tr><td>X6 <code>reporter_silent</code></td><td>A reporter active in the last 14 days stopped sending</td><td><code>ALERT_REPORTER_GAP_DAYS</code> (3)</td></tr>
+      <tr><td>X7 <code>policy_changed</code></td><td>The published record changed (p, sp, adkim, aspf, pct) as seen by reporters</td><td>any change in 48h</td></tr>
+      <tr><td>X8 <code>policy_inconsistent</code></td><td>Reporters disagree on a domain's effective record</td><td>&gt; 1 record in <code>ALERT_RECENT_HOURS</code> (48)</td></tr>
+      <tr><td>X9 <code>dns_error_spike</code></td><td>A reporter logged DNS temp/perm errors on many raw results</td><td><code>ALERT_DNS_ERROR_PCT</code> (5)</td></tr>
+      <tr><td>X10 <code>override_spike</code></td><td>Policy-override volume jumped versus its 7-day daily mean</td><td><code>ALERT_OVERRIDE_SPIKE_FACTOR</code> (3×)</td></tr>
+      <tr><td>X11 <code>spoof_spike</code></td><td>Unauthenticated mail from IPs outside the domain's SPF record spiked</td><td><code>ALERT_SPOOF_SPIKE_FACTOR</code> (3×) or <code>ALERT_SPOOF_ABS</code> (50)</td></tr>
+    </tbody>
+  </table>
+  <p>
+    "Recent" windows default to 48 hours rather than 24 because a reporter's window for a day
+    arrives during the following day.
+  </p>
+  <p>
+    Most rules watch a metric from the <a href="/help/metrics">metric reference</a> and fire when
+    it crosses a threshold: X3 uses the source labels from S3, X6 the reporter gaps from R2,
+    X7 and X8 the policy change log and consistency check from P3 and P2, X9 the DNS error rate
+    from A8, and X11 the spoof volume from S4. Looking up the metric explains what the alert saw.
+  </p>
+</article>
+
+<!-- Health -->
+<article id="health">
+  <header><strong>Health Score</strong></header>
+  <p>The score (0–100) on the dashboard and domain pages adds five components, each capped at its
+  weight (<code>HEALTH_W_*</code>):</p>
+  <table>
+    <thead><tr><th>Component</th><th>Formula</th><th>Weight</th></tr></thead>
+    <tbody>
+      <tr><td>Pass rate</td><td>DMARC pass rate × weight / 100</td><td>40</td></tr>
+      <tr><td>Enforcement</td><td><code>p=none</code> 0 · <code>p=quarantine</code> 60% · <code>p=reject</code> 100% of the weight</td><td>25</td></tr>
+      <tr><td>Spoof share</td><td>(100 − spoof share) × weight / 100 — spoof share is the not-in-SPF volume when resolved, otherwise the "neither" share</td><td>15</td></tr>
+      <tr><td>Reporter coverage</td><td>≥3 distinct reporters in the last 7 days → full, 2 → half, else 0</td><td>10</td></tr>
+      <tr><td>Alerts</td><td>No open <em>critical</em> alert → full</td><td>10</td></tr>
+    </tbody>
+  </table>
+  <p>Labels: ≥85 Excellent, ≥65 Good, ≥40 Fair, otherwise Critical.</p>
+</article>

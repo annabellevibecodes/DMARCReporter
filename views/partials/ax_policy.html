@@ -1,0 +1,74 @@
+{{/* Policy section (P1–P6). Expects .Policy (policyPayload) */}}
+{{with .Policy}}
+<div class="ax">
+  <div class="card mb">
+    <div class="section-head"><h2>Published policy as reporters saw it <span class="subtle">{{metric "P1"}}</span></h2></div>
+    {{if .Active.Tuple}}
+    {{with .Active.Tuple}}
+    <p>Reporters saw <b>p={{orNone .P}}</b>{{if and (eq .PctPresent 1) (lt .Pct 100)}} at <b>{{.Pct}}%</b> sampling{{end}}, subdomains governed by <b>{{if eq .SPPresent 1}}sp={{orNone .SP}}{{else}}p (no sp published){{end}}</b>{{if .NP}}, non-existent subdomains by <b>np={{.NP}}</b>{{end}}. Alignment is <b>{{orDefault .ADKIM "r"}}</b> for DKIM and <b>{{orDefault .ASPF "r"}}</b> for SPF{{if .DiscoveryMethod}}, discovered via <b>{{.DiscoveryMethod}}</b>{{end}}{{if eq .Testing "y"}} — <b>testing mode</b>{{end}}.</p>
+    {{end}}
+    <div class="tag-list">{{range .Active.Tags}}<span class="tag">{{.}}</span>{{end}}</div>
+    {{if .Active.Reporters}}
+    <details class="edit mt"><summary>Per-reporter view ({{len .Active.Reporters}} reporters{{if not .Active.Consistent}}, disagreeing{{else}}, all agree{{end}})</summary>
+      <div class="table-wrap"><table class="data"><thead><tr><th>Reporter</th><th>Dominant record as reported</th><th class="num">Reports</th><th class="num">Messages</th><th></th></tr></thead>
+      <tbody>{{range .Active.Reporters}}<tr><td>{{.OrgName}}</td><td><div class="tag-list">{{range .Tags}}<span class="tag">{{.}}</span>{{end}}</div></td><td class="num mono-cell">{{.Reports}}</td><td class="num mono-cell">{{commaN .Messages}}</td><td>{{if .Agrees}}<span class="badge pass">agrees</span>{{else}}<span class="badge warn">differs</span>{{end}}</td></tr>{{end}}</tbody></table></div>
+      <div class="footnote">Agreement is judged on p, sp (falling back to p), adkim, aspf and pct (default 100). Extra tags some reporters add (np, fo, discovery_method, testing) are shown but not compared.</div>
+    </details>
+    {{end}}
+    {{else}}<div class="subtle">No reports in this window.</div>{{end}}
+  </div>
+
+  {{if gt (len .Consistency) 1}}
+  <div class="warn-strip"><b>Reporters disagree on the published policy</b> <span class="subtle">{{metric "P2"}}</span> — {{len .Consistency}} distinct effective records in this window, usually DNS propagation lag, a resolver cache, or a reporter that omits a tag.
+    {{range .Consistency}}<div style="margin-top:6px;"><div class="tag-list">{{range .Tags}}<span class="tag">{{.}}</span>{{end}}</div><div class="footnote" style="margin-top:3px;">seen by {{range $i, $r := .ReporterList}}{{if $i}}, {{end}}{{$r}}{{end}} · {{.Reports}} reports · {{commaN .Messages}} msgs</div></div>{{end}}
+  </div>
+  {{end}}
+
+  {{with .Sampling}}{{if .Applies}}
+  <div class="callout warn"><span class="cnum">{{.Pct}}%</span> sampling <span class="subtle">{{metric "P5"}}</span> — only this share of failing mail is subject to the published policy; the rest is delivered as if p=none.
+    <div class="footnote">Expected sampled-out: ~{{pct0 .ExpectedSampledOut}} of {{commaN .FailingMessages}} failing messages ({{pct0 .ExpectedShare}}%) · observed <code>sampled_out</code> overrides: {{commaN .ObservedSampledOut}} ({{pct1 .ObservedShare}}%)</div>
+  </div>
+  {{end}}{{end}}
+
+  <div class="grid even-col mb">
+    <div class="card">
+      <div class="section-head"><h2>Change log <span class="subtle">{{metric "P3"}}</span></h2><span class="section-sub">per-reporter effective record over time</span></div>
+      {{if .ChangeLog}}
+      <div class="timeline">
+        {{range .ChangeLog}}
+        <div class="tl-item"><span class="tl-dot"></span>
+          <div class="tl-date">{{unixTime .At}}</div>
+          <div class="tl-title">{{range $i, $d := .Diff}}{{if $i}}, {{end}}{{$d.Field}} changed{{end}} <span class="subtle">seen by {{range $i, $r := .Reporters}}{{if $i}}, {{end}}{{$r}}{{end}}</span></div>
+          {{range .Diff}}<div class="tl-diff" style="margin:2px 4px 2px 0;">{{.Field}}: {{.From}} <span class="arrow">→</span> {{.To}}</div>{{end}}
+          <div class="footnote">Pass rate 7d before: {{if ge .PassRateBefore 0.0}}{{pct1 .PassRateBefore}}% ({{commaN .MessagesBefore}} msgs){{else}}n/a{{end}} · 7d after: {{if ge .PassRateAfter 0.0}}{{pct1 .PassRateAfter}}% ({{commaN .MessagesAfter}} msgs){{else}}n/a{{end}}</div>
+        </div>
+        {{end}}
+      </div>
+      {{else if .Domain}}<div class="subtle">No policy changes observed for this domain.</div>
+      {{else}}<div class="subtle">Select a single domain to see its change log.</div>{{end}}
+    </div>
+
+    <div class="card">
+      <div class="section-head"><h2>Subdomains <span class="subtle">{{metric "P4"}}</span></h2><span class="section-sub">header_from below the policy domain</span></div>
+      {{if .Subdomains}}
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>Subdomain</th><th class="num">Messages</th><th>Pass rate</th><th>Governed by</th></tr></thead>
+        <tbody>{{range .Subdomains}}<tr><td class="mono-cell">{{.HeaderFrom}}</td><td class="num mono-cell">{{commaN .TotalMessages}}</td><td>{{pct0 .PassRate}}%</td><td><span class="tag">{{.GovernedBy}}={{.EffectiveSP}}</span></td></tr>{{end}}</tbody>
+      </table></div>
+      {{else}}<div class="subtle">No subdomain traffic in this window.</div>{{end}}
+
+      {{with .Readiness}}
+      <div class="section-head" style="margin-top:16px;"><h3>Enforcement readiness <span class="subtle">{{metric "P6"}}</span></h3></div>
+      {{if or (eq .Policy "none") (eq .Policy "")}}
+        {{if gt .TotalMessages 0}}<p style="font-size:13px;">Moving to <b>p=reject</b> would block <b>{{commaN .Neither}}</b> messages (<b>{{pct1 .NeitherShare}}%</b>) based on this window.</p>{{else}}<div class="subtle">no data</div>{{end}}
+      {{else}}
+        {{if gt .KnownGoodNeither 0}}
+        <p style="font-size:13px;"><b>{{commaN .KnownGoodNeither}}</b> messages from sources labelled <b>known_good</b> are failing under <b>p={{.Policy}}</b> — legitimate mail at risk.</p>
+        <div class="tag-list">{{range .KnownGoodSources}}<a class="tag fail" href="/sources/{{.SourceIP}}">{{if .Label}}{{.Label}}{{else}}{{.SourceIP}}{{end}} <span class="subtle">{{commaN .Messages}}</span></a>{{end}}</div>
+        {{else}}<div class="subtle">No known-good source is failing under p={{.Policy}}.{{if eq .Neither 0}} Nothing failing at all.{{end}}</div>{{end}}
+      {{end}}
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}

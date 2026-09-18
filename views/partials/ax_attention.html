@@ -1,0 +1,21 @@
+{{/* Needs-attention list. Expects .Attention (items) */}}
+<div class="ax">
+  <div class="section-head">
+    <h2>Needs attention</h2>
+    {{if .AlertsLink}}<a class="link-btn" href="{{.AlertsLink}}">View all alerts →</a>{{end}}
+  </div>
+  {{if .Attention}}
+    {{range .Attention}}
+    <div class="attn-row">
+      <span class="sev-dot sev-{{.Severity}}"></span>
+      <div class="attn-main">
+        <div class="attn-title">{{if .Href}}<a href="{{.Href}}" style="text-decoration:none;">{{.Title}}</a>{{else}}{{.Title}}{{end}}</div>
+        {{if .Sub}}<div class="attn-sub">{{.Sub}}</div>{{end}}
+      </div>
+      {{if .Tag}}<span class="attn-tag">{{metric .Tag}}</span>{{end}}
+    </div>
+    {{end}}
+  {{else}}
+  <div class="empty-state"><div class="glyph">✓</div>Nothing needs attention<br><span class="section-sub">No open alerts, new sources or unexplained overrides in this period.</span></div>
+  {{end}}
+</div>

@@ -1,0 +1,5 @@
+<div class="ax">
+  <div class="toolbar" style="margin-bottom:18px;">
+    {{range .HelpSections}}<a class="filter-chip{{if eq .Slug $.HelpSection}} active{{end}}" href="/help{{if .Slug}}/{{.Slug}}{{end}}">{{.Title}}</a>{{end}}
+  </div>
+</div>
