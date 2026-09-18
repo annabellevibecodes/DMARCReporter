@@ -1,0 +1,31 @@
+{
+  "organization-name": "Reporter-D",
+  "date-range": {
+    "start-datetime": "2026-09-05T00:00:00Z",
+    "end-datetime": "2026-09-05T23:59:59Z"
+  },
+  "contact-info": "tlsrpt@reporter-d.example",
+  "report-id": "dane-1",
+  "policies": [{
+    "policy": {
+      "policy-type": "tlsa",
+      "policy-string": [
+        "3 1 1 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+        "3 1 1 FEDCBA9876543210FEDCBA9876543210FEDCBA9876543210FEDCBA9876543210"
+      ],
+      "policy-domain": "dane.example.com",
+      "mx-host": ["mx1.dane.example.com"]
+    },
+    "summary": {
+      "total-successful-session-count": 220,
+      "total-failure-session-count": 4
+    },
+    "failure-details": [{
+      "result-type": "tlsa-invalid",
+      "sending-mta-ip": "203.0.113.9",
+      "receiving-mx-hostname": "mx1.dane.example.com",
+      "receiving-ip": "2001:db8::25",
+      "failed-session-count": 4
+    }]
+  }]
+}

@@ -186,7 +186,36 @@ func fetchMessageAttachments(ctx context.Context, token, mailbox, messageID stri
 		}
 		out = append(out, importer.Attachment{Filename: att.Name, Data: data, ReceivedAt: receivedAt})
 	}
+
+	// A TLS report has to be checked against the DKIM signature of the mail
+	// that carried it (RFC 8460 §3), and Graph hands out attachments
+	// individually — so fetch the raw MIME, but only for messages that
+	// actually carry one, and never fail the import over it.
+	if needsRawMessage(out) {
+		rawURL := fmt.Sprintf("%s/messages/%s/$value", userPath(mailbox), url.PathEscape(messageID))
+		raw, err := getRaw(ctx, token, rawURL)
+		if err != nil {
+			audit.Debug("graph: message %s $value fetch error (TLS reports stay dkim_status=unknown): %v", messageID, err)
+		} else {
+			for i := range out {
+				if parser.IsTLSRPTFile(out[i].Filename) {
+					out[i].RawMessage = raw
+				}
+			}
+		}
+	}
 	return out, nil
+}
+
+// needsRawMessage reports whether any attachment is a TLS report, which is the
+// only kind whose verification needs the carrying message.
+func needsRawMessage(atts []importer.Attachment) bool {
+	for _, a := range atts {
+		if parser.IsTLSRPTFile(a.Filename) {
+			return true
+		}
+	}
+	return false
 }
 
 // moveMessage moves a message to destFolderID.

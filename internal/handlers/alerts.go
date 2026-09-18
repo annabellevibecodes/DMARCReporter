@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"sort"
 	"strconv"
@@ -36,7 +37,7 @@ func init() {
 		return items
 	}
 	overviewExtras = func(a *App, f database.StatsFilter, resp fiber.Map) {
-		if h, err := scoring.Compute(a.DB, f.Domain, f, scoring.WeightsFromConfig(a.Cfg)); err == nil {
+		if h, err := scoring.ComputeWithOptions(a.DB, f.Domain, f, scoring.WeightsFromConfig(a.Cfg), a.Cfg.TLSRPTRequireDKIM); err == nil {
 			resp["health"] = h
 		}
 		if open, _, err := database.CountOpenAlerts(a.DB, f.Domain); err == nil {
@@ -129,8 +130,40 @@ func contextHref(al database.Alert) string {
 		}
 	case "reporter_silent", "dns_error_spike":
 		return "/reporters"
+	case "tls_rate_drop", "tls_policy_inconsistent", "tls_policy_host_error", "tls_reporter_silent":
+		if al.Domain != "" {
+			return "/tlsrpt?domain=" + url.QueryEscape(al.Domain)
+		}
+		return "/tlsrpt"
+	case "tls_starttls_stripped", "tls_cert_expired", "tls_dane_invalid", "tls_new_failing_receiver":
+		// The key carries the host (and for X13 the reporter, for X19 the
+		// node) so the link lands on exactly what fired.
+		return tlsAlertHref(al)
 	}
 	return "/"
+}
+
+// tlsAlertHref builds a /tlsrpt link scoped to the host or node an alert
+// names. Keys are "<host>", "<org>|<host>" (X13) or "<host>|<ip>" (X19).
+func tlsAlertHref(al database.Alert) string {
+	q := url.Values{}
+	if al.Domain != "" {
+		q.Set("domain", al.Domain)
+	}
+	left, right, split := strings.Cut(al.Key, "|")
+	switch {
+	case split && net.ParseIP(right) != nil:
+		q.Set("mx", left)
+		q.Set("rip", right)
+	case split:
+		q.Set("mx", right)
+	case left != "" && left != "(unspecified)":
+		q.Set("mx", left)
+	}
+	if len(q) == 0 {
+		return "/tlsrpt"
+	}
+	return "/tlsrpt?" + q.Encode()
 }
 
 // HandleAlertsPage renders /alerts.
@@ -284,7 +317,7 @@ func (a *App) HandleAPIHealth(c *fiber.Ctx) error {
 		return err
 	}
 	cmp, err := database.WithComparison(f, func(sf database.StatsFilter) (*scoring.Score, error) {
-		return scoring.Compute(a.DB, domain, sf, scoring.WeightsFromConfig(a.Cfg))
+		return scoring.ComputeWithOptions(a.DB, domain, sf, scoring.WeightsFromConfig(a.Cfg), a.Cfg.TLSRPTRequireDKIM)
 	})
 	if err != nil {
 		return err
@@ -312,7 +345,7 @@ type healthKPI struct {
 
 func (a *App) healthKPIFor(domain string, f database.StatsFilter) *healthKPI {
 	cmp, err := database.WithComparison(f, func(sf database.StatsFilter) (*scoring.Score, error) {
-		return scoring.Compute(a.DB, domain, sf, scoring.WeightsFromConfig(a.Cfg))
+		return scoring.ComputeWithOptions(a.DB, domain, sf, scoring.WeightsFromConfig(a.Cfg), a.Cfg.TLSRPTRequireDKIM)
 	})
 	if err != nil {
 		return nil
@@ -324,6 +357,13 @@ func (a *App) healthKPIFor(domain string, f database.StatsFilter) *healthKPI {
 	parts = append(parts, fmt.Sprintf("spoof %.0f/%.0f", s.Components.Spoof, s.Weights.Spoof))
 	parts = append(parts, fmt.Sprintf("coverage %.0f/%.0f", s.Components.Coverage, s.Weights.Coverage))
 	parts = append(parts, fmt.Sprintf("alerts %.0f/%.0f", s.Components.Alerts, s.Weights.Alerts))
+	if s.TLSScored {
+		parts = append(parts, fmt.Sprintf("tls %.0f/%.0f", s.Components.TLS, s.Weights.TLS))
+	} else {
+		// Say it plainly: the component is out of the maximum too, so the
+		// score is not being marked down for the absence.
+		parts = append(parts, "tls not scored (no reports)")
+	}
 	k.Summary = strings.Join(parts, " · ")
 	if cmp.Previous != nil {
 		k.Delta = newDeltaView(float64(s.Total-(*cmp.Previous).Total), "pts", true)

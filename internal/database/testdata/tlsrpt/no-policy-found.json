@@ -1,0 +1,19 @@
+{
+  "organization-name": "Reporter-N",
+  "date-range": {
+    "start-datetime": "2026-09-04T00:00:00Z",
+    "end-datetime": "2026-09-04T23:59:59Z"
+  },
+  "contact-info": "tlsrpt@reporter-n.example",
+  "report-id": "nopolicy-1",
+  "policies": [{
+    "policy": {
+      "policy-type": "no-policy-found",
+      "policy-domain": "nopolicy.example.com"
+    },
+    "summary": {
+      "total-successful-session-count": 12,
+      "total-failure-session-count": 0
+    }
+  }]
+}

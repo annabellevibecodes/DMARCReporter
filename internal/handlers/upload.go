@@ -83,7 +83,12 @@ func (a *App) HandleUploadSubmit(c *fiber.Ctx) error {
 				return c.Redirect("/upload")
 			}
 			for _, p := range parts {
-				atts = append(atts, importer.Attachment{Filename: p.Filename, Data: p.Data, ReceivedAt: p.ReceivedAt})
+				atts = append(atts, importer.Attachment{
+					Filename: p.Filename, Data: p.Data, ReceivedAt: p.ReceivedAt,
+					// An uploaded .eml is still a mailed report, so its DKIM
+					// signature is checked exactly as if we had fetched it.
+					RawMessage: data,
+				})
 			}
 		} else {
 			atts = []importer.Attachment{{Filename: fh.Filename, Data: data}}

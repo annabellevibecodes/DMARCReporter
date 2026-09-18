@@ -6,7 +6,7 @@ import (
 )
 
 func TestCatalogueIsComplete(t *testing.T) {
-	counts := map[string]int{"C": 8, "S": 6, "A": 8, "P": 6, "R": 8, "X": 11}
+	counts := map[string]int{"C": 8, "S": 6, "A": 8, "P": 6, "R": 8, "T": 15, "X": 19}
 	for letter, n := range counts {
 		for i := 1; i <= n; i++ {
 			id := letter + itoa(i)
@@ -26,8 +26,8 @@ func TestCatalogueIsComplete(t *testing.T) {
 			}
 		}
 	}
-	if len(All) != 8+6+8+6+8+11 {
-		t.Errorf("catalogue has %d entries, want %d", len(All), 8+6+8+6+8+11)
+	if len(All) != 8+6+8+6+8+15+19 {
+		t.Errorf("catalogue has %d entries, want %d", len(All), 8+6+8+6+8+15+19)
 	}
 }
 
@@ -89,8 +89,8 @@ func TestIDsAreOrderedByFamily(t *testing.T) {
 	if ids[0] != "C1" {
 		t.Errorf("first id = %q, want C1", ids[0])
 	}
-	if ids[len(ids)-1] != "X11" {
-		t.Errorf("last id = %q, want X11", ids[len(ids)-1])
+	if ids[len(ids)-1] != "X19" {
+		t.Errorf("last id = %q, want X19", ids[len(ids)-1])
 	}
 	// X10 must sort after X9, not between X1 and X2.
 	var x9, x10 int

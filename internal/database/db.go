@@ -37,9 +37,30 @@ var ipInfoColumns = []struct{ name, def string }{
 	{"whois_asn", "TEXT NOT NULL DEFAULT ''"},
 }
 
+// tlsrptReportColumns lists the columns added to `tlsrpt_reports` by the
+// TLS-RPT analytics extension, in the same style as reportColumns.
+var tlsrptReportColumns = []struct{ name, def string }{
+	{"received_at", "INTEGER NOT NULL DEFAULT 0"},
+	{"submitter_domain", "TEXT NOT NULL DEFAULT ''"},
+	{"report_domain", "TEXT NOT NULL DEFAULT ''"},
+	{"transport", "TEXT NOT NULL DEFAULT ''"},
+	{"dkim_status", "TEXT NOT NULL DEFAULT 'unknown'"},
+	{"dkim_domain", "TEXT NOT NULL DEFAULT ''"},
+	{"dkim_selector", "TEXT NOT NULL DEFAULT ''"},
+	{"dkim_stype_tlsrpt", "INTEGER NOT NULL DEFAULT 0"},
+	{"dkim_matches_contact", "INTEGER NOT NULL DEFAULT 0"},
+	{"dkim_detail", "TEXT NOT NULL DEFAULT ''"},
+	{"multi_policy", "INTEGER NOT NULL DEFAULT 0"},
+	{"unattributed_failures", "INTEGER NOT NULL DEFAULT 0"},
+	{"malformed_ips", "INTEGER NOT NULL DEFAULT 0"},
+	{"unknown_result_types", "INTEGER NOT NULL DEFAULT 0"},
+	{"range_variance", "INTEGER NOT NULL DEFAULT 0"},
+}
+
 const (
-	metaBackfillV1  = "backfill_xml_v1"
-	metaSeedDomains = "seed_managed_domains_v1"
+	metaBackfillV1       = "backfill_xml_v1"
+	metaSeedDomains      = "seed_managed_domains_v1"
+	metaBackfillTLSRPTV1 = "backfill_tlsrpt_v1"
 )
 
 // Open opens (or creates) the SQLite database at path and runs migrations.
@@ -75,6 +96,11 @@ func migrate(db *sqlx.DB) error {
 			return err
 		}
 	}
+	for _, c := range tlsrptReportColumns {
+		if err := ensureColumn(db.DB, "tlsrpt_reports", c.name, c.def); err != nil {
+			return err
+		}
+	}
 
 	if done, err := GetMeta(db, metaSeedDomains); err != nil {
 		return err
@@ -106,6 +132,24 @@ func migrate(db *sqlx.DB) error {
 			log.Printf("migrate: backfilled %d report(s) from stored XML", n)
 		}
 		if err := SetMeta(db, metaBackfillV1, time.Now().UTC().Format(time.RFC3339)); err != nil {
+			return err
+		}
+	}
+
+	// TLS reports imported before the extension only have their summary
+	// counts; the policy, MX and failure rows come back out of raw_json.
+	if done, err := GetMeta(db, metaBackfillTLSRPTV1); err != nil {
+		return err
+	} else if done == "" {
+		res, err := BackfillTLSRPT(db)
+		if err != nil {
+			return fmt.Errorf("backfill tlsrpt: %w", err)
+		}
+		if res.Reports > 0 {
+			log.Printf("migrate: backfilled %d TLS report(s) into policy/failure rows (%d multi-policy, %d unreadable)",
+				res.Reports, res.MultiPolicy, res.Failed)
+		}
+		if err := SetMeta(db, metaBackfillTLSRPTV1, time.Now().UTC().Format(time.RFC3339)); err != nil {
 			return err
 		}
 	}

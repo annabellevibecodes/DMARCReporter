@@ -1,0 +1,21 @@
+{
+  "organization-name": "Reporter-W",
+  "date-range": {
+    "start-datetime": "2026-09-09T06:30:00Z",
+    "end-datetime": "2026-09-11T18:45:00Z"
+  },
+  "contact-info": "tlsrpt@reporter-w.example",
+  "report-id": "window-1",
+  "policies": [{
+    "policy": {
+      "policy-type": "sts",
+      "policy-string": ["version: STSv1","mode: testing","mx: mx.example.com","max_age: 86400"],
+      "policy-domain": "example.com",
+      "mx-host": ["mx.example.com"]
+    },
+    "summary": {
+      "total-successful-session-count": 77,
+      "total-failure-session-count": 0
+    }
+  }]
+}

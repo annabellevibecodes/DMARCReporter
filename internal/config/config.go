@@ -56,12 +56,27 @@ type Config struct {
 	AlertRecentHours         int           // window for "last 24h" rules (see ANALYTICS_PLAN.md phase 5 deviation)
 	AlertEvalInterval        time.Duration // daily ticker interval for time-based rules
 
+	// TLS alert thresholds (X12–X19).
+	AlertTLSRateDrop          float64 // X12: points of week-over-week drop
+	AlertTLSMinWindowSessions int64   // X12: minimum sessions in both windows
+	AlertTLSStripMinSessions  int64   // X13: minimum stripped sessions
+	AlertTLSPolicyHostErrPct  float64 // X16: percent of a domain's sessions
+	AlertTLSReporterGapDays   int     // X18: days of silence
+	AlertTLSNewFailingIPMin   int64   // X19: minimum failures from a new node
+
+	// TLSRPTRequireDKIM applies RFC 8460 §3: a TLS report that arrived as mail
+	// without a valid DKIM signature is stored and shown, with its reason, but
+	// left out of the T-series metrics. Reports uploaded through the web form
+	// have no carrying message and are never affected.
+	TLSRPTRequireDKIM bool
+
 	// Health score weights (sum to 100 by default).
 	HealthWeightPassRate    float64
 	HealthWeightEnforcement float64
 	HealthWeightSpoof       float64
 	HealthWeightCoverage    float64
 	HealthWeightAlerts      float64
+	HealthWeightTLS         float64
 
 	// Source pattern classification thresholds (S3), percent of a source's messages.
 	PatternHealthyMin       int // both aligned ≥ → healthy
@@ -119,11 +134,21 @@ func Load() Config {
 		AlertRecentHours:         getenvInt("ALERT_RECENT_HOURS", 48),
 		AlertEvalInterval:        getenvDuration("ALERT_EVAL_INTERVAL", 24*time.Hour),
 
+		AlertTLSRateDrop:          getenvFloat("ALERT_TLS_RATE_DROP", 5.0),
+		AlertTLSMinWindowSessions: int64(getenvInt("ALERT_TLS_MIN_WINDOW_SESSIONS", 100)),
+		AlertTLSStripMinSessions:  int64(getenvInt("ALERT_TLS_STRIP_MIN_SESSIONS", 5)),
+		AlertTLSPolicyHostErrPct:  getenvFloat("ALERT_TLS_POLICY_HOST_ERR_PCT", 5),
+		AlertTLSReporterGapDays:   getenvInt("ALERT_TLS_REPORTER_GAP_DAYS", 3),
+		AlertTLSNewFailingIPMin:   int64(getenvInt("ALERT_TLS_NEW_FAILING_IP_MIN", 10)),
+
+		TLSRPTRequireDKIM: os.Getenv("TLSRPT_REQUIRE_DKIM") != "false",
+
 		HealthWeightPassRate:    getenvFloat("HEALTH_W_PASS_RATE", 40),
 		HealthWeightEnforcement: getenvFloat("HEALTH_W_ENFORCEMENT", 25),
 		HealthWeightSpoof:       getenvFloat("HEALTH_W_SPOOF", 15),
 		HealthWeightCoverage:    getenvFloat("HEALTH_W_COVERAGE", 10),
 		HealthWeightAlerts:      getenvFloat("HEALTH_W_ALERTS", 10),
+		HealthWeightTLS:         getenvFloat("HEALTH_W_TLS", 15),
 
 		PatternHealthyMin:       getenvInt("PATTERN_HEALTHY_MIN", 90),
 		PatternForwarderMin:     getenvInt("PATTERN_FORWARDER_MIN", 60),

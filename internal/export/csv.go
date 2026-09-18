@@ -132,6 +132,49 @@ func WriteCSV(w io.Writer, rd *ReportData) error {
 			write(escapeRow(r)...)
 		}
 	}
+	// SMTP TLS reporting.
+	blank()
+	write("SMTP TLS Reporting (RFC 8460)")
+	if kv := tlsSummaryKV(rd); len(kv) > 0 {
+		for _, row := range kv {
+			write(escapeFormula(row[0]), escapeFormula(row[1]))
+		}
+		if rows := tlsPolicyRows(rd); len(rows) > 0 {
+			blank()
+			write("TLS Policy Applied")
+			write(tlsPolicyHeaders...)
+			for _, r := range rows {
+				write(escapeRow(r)...)
+			}
+		}
+		if rows := tlsFailureRows(rd); len(rows) > 0 {
+			blank()
+			write("TLS Failures by Result Type")
+			write(tlsFailureHeaders...)
+			for _, r := range rows {
+				write(escapeRow(r)...)
+			}
+		}
+		if rows := tlsReceiverRows(rd); len(rows) > 0 {
+			blank()
+			write("TLS Top Failing Receivers")
+			write(tlsReceiverHeaders...)
+			for _, r := range rows {
+				write(escapeRow(r)...)
+			}
+		}
+		if rows := tlsAlertRows(rd); len(rows) > 0 {
+			blank()
+			write("Open TLS Alerts")
+			write(tlsAlertHeaders...)
+			for _, r := range rows {
+				write(escapeRow(r)...)
+			}
+		}
+	} else {
+		write("No TLS reports for this period")
+	}
+
 	if rows := alertRows(rd); len(rows) > 0 {
 		blank()
 		write("Open Alerts")

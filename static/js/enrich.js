@@ -23,6 +23,10 @@
   var spfBar        = document.getElementById('spf-bar');
   var spfCounter    = document.getElementById('spf-counter');
   var spfLog        = document.getElementById('spf-log');
+  var tlsSection    = document.getElementById('tls-section');
+  var tlsBar        = document.getElementById('tls-bar');
+  var tlsCounter    = document.getElementById('tls-counter');
+  var tlsLog        = document.getElementById('tls-log');
   var doneBanner    = document.getElementById('done-banner');
   var progressTitle = document.getElementById('progress-title');
   var btn           = document.getElementById('start-btn');
@@ -56,6 +60,14 @@
     spfCounter.textContent = done + ' / ' + total;
   }
 
+  function showTLSProgress(done, total) {
+    if (!tlsSection) return;
+    tlsSection.style.display = '';
+    tlsBar.max = total || 1;
+    tlsBar.value = done;
+    tlsCounter.textContent = done + ' / ' + total;
+  }
+
   function showError(message) {
     progressTitle.textContent = 'Error';
     doneBanner.style.display = '';
@@ -65,12 +77,16 @@
     if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
   }
 
-  function showDone(ips, domains, spf) {
+  function showDone(ips, domains, spf, tls) {
     progressTitle.textContent = 'Complete';
     doneBanner.style.display = '';
-    var suffix = (typeof ips === 'number' && typeof domains === 'number')
-      ? ' — ' + ips + ' IP(s) resolved, ' + domains + ' domain(s) checked' + (typeof spf === 'number' ? ', ' + spf + ' SPF record(s) expanded.' : '.')
-      : '.';
+    var suffix = '.';
+    if (typeof ips === 'number' && typeof domains === 'number') {
+      suffix = ' — ' + ips + ' IP(s) resolved, ' + domains + ' domain(s) checked';
+      if (typeof spf === 'number') suffix += ', ' + spf + ' SPF record(s) expanded';
+      if (typeof tls === 'number') suffix += ', ' + tls + ' domain(s) TLS-checked';
+      suffix += '.';
+    }
     doneBanner.textContent = '✓ Enrichment complete' + suffix;
     if (btn) { btn.disabled = false; btn.textContent = 'Run Again'; }
   }
@@ -91,6 +107,10 @@
         showDomainProgress(d.domain_done, d.domain_total);
         if (d.domain_done > 0) appendLog(domainLog, '… resuming (earlier items not shown)');
       }
+      if (d.tls_total > 0) {
+        showTLSProgress(d.tls_done, d.tls_total);
+        if (d.tls_done > 0) appendLog(tlsLog, '… resuming (earlier items not shown)');
+      }
       if (d.spf_total > 0) {
         showSPFProgress(d.spf_done, d.spf_total);
         if (d.spf_done > 0) appendLog(spfLog, '… resuming (earlier items not shown)');
@@ -99,8 +119,8 @@
         es.close();
         if (d.error) {
           showError(d.error);
-        } else if (d.ip_total > 0 || d.domain_total > 0 || d.spf_total > 0) {
-          showDone(d.ip_total, d.domain_total, d.spf_total);
+        } else if (d.ip_total > 0 || d.domain_total > 0 || d.spf_total > 0 || d.tls_total > 0) {
+          showDone(d.ip_total, d.domain_total, d.spf_total, d.tls_total);
         }
       }
     });
@@ -126,6 +146,13 @@
         if (d.has_bimi)    badges.push('BIMI');
         if (d.has_mta_sts) badges.push('MTA-STS');
         appendLog(domainLog, '✓ ' + d.domain + (badges.length ? ' — ' + badges.join(', ') : ' — none'));
+      } else if (d.type === 'tls_start') {
+        showTLSProgress(0, d.total);
+        if (d.total === 0) appendLog(tlsLog, '(nothing to check)');
+      } else if (d.type === 'tls') {
+        showTLSProgress(d.done, d.total);
+        appendLog(tlsLog, (d.changed > 0 ? '~' : '·') + ' ' + d.domain + ' — ' + d.summary +
+          (d.changed > 0 ? ' (' + d.changed + ' change(s))' : ''));
       } else if (d.type === 'spf_start') {
         showSPFProgress(0, d.total);
         if (d.total === 0) appendLog(spfLog, '(nothing to expand)');
@@ -139,7 +166,7 @@
     es.addEventListener('done', function (e) {
       es.close();
       var d = JSON.parse(e.data);
-      showDone(d.ips, d.domains, d.spf);
+      showDone(d.ips, d.domains, d.spf, d.tls);
     });
 
     es.addEventListener('error', function (e) {
@@ -157,9 +184,12 @@
     var domainTotal = parseInt(progressSection.dataset.domainTotal, 10) || 0;
     var spfDone     = parseInt(progressSection.dataset.spfDone, 10) || 0;
     var spfTotal    = parseInt(progressSection.dataset.spfTotal, 10) || 0;
+    var tlsDone     = parseInt(progressSection.dataset.tlsDone, 10) || 0;
+    var tlsTotal    = parseInt(progressSection.dataset.tlsTotal, 10) || 0;
     if (ipTotal > 0) showIPProgress(ipDone, ipTotal);
     if (domainTotal > 0) showDomainProgress(domainDone, domainTotal);
     if (spfTotal > 0) showSPFProgress(spfDone, spfTotal);
+    if (tlsTotal > 0) showTLSProgress(tlsDone, tlsTotal);
     connect();
   }
 }());

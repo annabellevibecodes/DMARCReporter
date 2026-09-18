@@ -1,6 +1,6 @@
-// Package scoring computes the per-domain (or global) DMARC health score.
+// Package scoring computes the per-domain (or global) mail health score.
 //
-// The score adds five components, each capped at its weight (defaults in
+// The score adds six components, each capped at its weight (defaults in
 // parentheses, configurable via HEALTH_W_*):
 //
 //	pass rate            pass rate percent × W_pass/100                          (40)
@@ -8,9 +8,19 @@
 //	spoof share          (100 − spoof share) × W_spoof/100                        (15)
 //	reporter coverage    ≥3 distinct reporters in 7 days → W_cov, 2 → W_cov/2     (10)
 //	open alerts          no open critical alert → W_alerts                        (10)
+//	transport security   TLS success rate (70 %) + TLS reporter coverage (30 %)   (15)
 //
 // The spoof share is the not-in-SPF volume once the SPF cache is resolved for
 // every domain in scope, otherwise the "neither aligned" share of the matrix.
+//
+// The TLS component is skipped, not zeroed, when a domain has no TLS sessions
+// to judge: its weight comes out of Max as well as the total, so a domain
+// nobody sends TLS reports about scores exactly as it did before the
+// component existed. Absence of evidence and evidence of breakage are
+// different states and must not look alike. (The DMARC pass-rate and spoof
+// components still score a flat 0 with no data — a pre-existing defect logged
+// in ANALYTICS_PLAN.md, deliberately not changed here because it would move
+// every existing score.)
 package scoring
 
 import (
@@ -23,27 +33,32 @@ import (
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
 )
 
-// Weights are the five component maxima.
+// Weights are the six component maxima.
 type Weights struct {
 	PassRate    float64
 	Enforcement float64
 	Spoof       float64
 	Coverage    float64
 	Alerts      float64
+	TLS         float64
 }
 
 // WeightsFromConfig reads HEALTH_W_* (falling back to the spec defaults).
 func WeightsFromConfig(cfg config.Config) Weights {
 	w := Weights{PassRate: cfg.HealthWeightPassRate, Enforcement: cfg.HealthWeightEnforcement,
-		Spoof: cfg.HealthWeightSpoof, Coverage: cfg.HealthWeightCoverage, Alerts: cfg.HealthWeightAlerts}
+		Spoof: cfg.HealthWeightSpoof, Coverage: cfg.HealthWeightCoverage, Alerts: cfg.HealthWeightAlerts,
+		TLS: cfg.HealthWeightTLS}
 	if w.PassRate+w.Enforcement+w.Spoof+w.Coverage+w.Alerts <= 0 {
 		return DefaultWeights
 	}
 	return w
 }
 
-// DefaultWeights are the spec defaults.
-var DefaultWeights = Weights{PassRate: 40, Enforcement: 25, Spoof: 15, Coverage: 10, Alerts: 10}
+// DefaultWeights are the spec defaults. The DMARC five still sum to 100; the
+// TLS component is added on top rather than by rebalancing them, because Max
+// is computed from the weights in play and a domain's DMARC score therefore
+// keeps its meaning.
+var DefaultWeights = Weights{PassRate: 40, Enforcement: 25, Spoof: 15, Coverage: 10, Alerts: 10, TLS: 15}
 
 // Score is the result with every component exposed for the UI.
 type Score struct {
@@ -61,12 +76,21 @@ type Score struct {
 	OpenAlerts    int     `json:"open_alerts"`
 	TotalMessages int64   `json:"total_messages"`
 
+	// TLS transport security. TLSScored is false when there were no TLS
+	// sessions to judge, in which case the component is left out of both the
+	// total and the maximum rather than scored as a failure.
+	TLSScored    bool    `json:"tls_scored"`
+	TLSRate      float64 `json:"tls_rate"`
+	TLSSessions  int64   `json:"tls_sessions"`
+	TLSReporters int     `json:"tls_reporters"`
+
 	Components struct {
 		PassRate    float64 `json:"pass_rate"`
 		Enforcement float64 `json:"enforcement"`
 		Spoof       float64 `json:"spoof"`
 		Coverage    float64 `json:"coverage"`
 		Alerts      float64 `json:"alerts"`
+		TLS         float64 `json:"tls"`
 	} `json:"components"`
 	Weights Weights `json:"weights"`
 }
@@ -100,10 +124,19 @@ func BannerClass(label string) string {
 }
 
 // Compute calculates the score for domain ("" = all domains) over the window f.
+//
+// TLS reports that fail the RFC 8460 §3 signature requirement are excluded
+// from the TLS component, matching every other TLS figure in the interface.
 func Compute(db *sqlx.DB, domain string, f database.StatsFilter, w Weights) (*Score, error) {
+	return ComputeWithOptions(db, domain, f, w, true)
+}
+
+// ComputeWithOptions is Compute with the DKIM requirement made explicit, for
+// callers that carry their own configuration.
+func ComputeWithOptions(db *sqlx.DB, domain string, f database.StatsFilter, w Weights, requireDKIM bool) (*Score, error) {
 	f.Domain = domain
 	f.Compare = false
-	s := &Score{Domain: domain, Weights: w, Max: int(math.Round(w.PassRate + w.Enforcement + w.Spoof + w.Coverage + w.Alerts))}
+	s := &Score{Domain: domain, Weights: w}
 
 	stats, err := database.GetDashboardStats(db, f)
 	if err != nil {
@@ -168,11 +201,64 @@ func Compute(db *sqlx.DB, domain string, f database.StatsFilter, w Weights) (*Sc
 		s.Components.Alerts = w.Alerts
 	}
 
-	total := s.Components.PassRate + s.Components.Enforcement + s.Components.Spoof + s.Components.Coverage + s.Components.Alerts
+	// Transport security (T1 + T12). Judged only when there are sessions to
+	// judge: no TLS reports means no evidence either way, so the component is
+	// dropped from the maximum instead of scoring zero.
+	if err := s.scoreTLS(db, domain, f, w, requireDKIM); err != nil {
+		return nil, err
+	}
+
+	maxWeight := w.PassRate + w.Enforcement + w.Spoof + w.Coverage + w.Alerts
+	if s.TLSScored {
+		maxWeight += w.TLS
+	}
+	s.Max = int(math.Round(maxWeight))
+
+	total := s.Components.PassRate + s.Components.Enforcement + s.Components.Spoof +
+		s.Components.Coverage + s.Components.Alerts + s.Components.TLS
 	s.Total = int(math.Round(total))
 	if s.Total > s.Max {
 		s.Total = s.Max
 	}
 	s.Label = LabelFor(s.Total, s.Max)
 	return s, nil
+}
+
+// scoreTLS fills in the transport-security component.
+//
+// The split is 70 % success rate and 30 % reporter coverage: the rate is what
+// the component is about, but a rate computed from a single reporter is one
+// provider's view, so coverage carries real weight too.
+func (s *Score) scoreTLS(db *sqlx.DB, domain string, f database.StatsFilter, w Weights, requireDKIM bool) error {
+	tf := database.TLSFilter{
+		Domain: domain, From: f.From, To: f.To, RequireDKIM: requireDKIM,
+	}
+	rate, err := database.GetTLSRate(db, tf)
+	if err != nil {
+		return err
+	}
+	s.TLSSessions = rate.Total
+	s.TLSRate = rate.Rate
+	if rate.Total == 0 {
+		// No sessions: nothing to judge. TLSScored stays false and the
+		// weight is left out of Max by the caller.
+		return nil
+	}
+
+	volume, err := database.GetTLSVolume(db, tf)
+	if err != nil {
+		return err
+	}
+	s.TLSReporters = volume.ReporterCount
+	s.TLSScored = true
+
+	component := rate.Rate / 100 * w.TLS * 0.7
+	switch {
+	case volume.ReporterCount >= 2:
+		component += w.TLS * 0.3
+	case volume.ReporterCount == 1:
+		component += w.TLS * 0.15
+	}
+	s.Components.TLS = component
+	return nil
 }

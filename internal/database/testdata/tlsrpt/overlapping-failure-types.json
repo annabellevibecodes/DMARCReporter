@@ -1,0 +1,33 @@
+{
+  "organization-name": "Reporter-O",
+  "date-range": {
+    "start-datetime": "2026-09-02T00:00:00Z",
+    "end-datetime": "2026-09-02T23:59:59Z"
+  },
+  "contact-info": "tlsrpt@reporter-o.example",
+  "report-id": "overlapping-1",
+  "policies": [{
+    "policy": {
+      "policy-type": "sts",
+      "policy-string": ["version: STSv1","mode: enforce","mx: mx.example.com","max_age: 604800"],
+      "policy-domain": "example.com",
+      "mx-host": ["mx.example.com"]
+    },
+    "summary": {
+      "total-successful-session-count": 40,
+      "total-failure-session-count": 60
+    },
+    "failure-details": [{
+      "result-type": "certificate-not-trusted",
+      "sending-mta-ip": "198.51.100.10",
+      "receiving-mx-hostname": "mx.example.com",
+      "failed-session-count": 60
+    }, {
+      "result-type": "validation-failure",
+      "sending-mta-ip": "198.51.100.10",
+      "receiving-mx-hostname": "mx.example.com",
+      "failed-session-count": 55,
+      "failure-reason-code": "X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY"
+    }]
+  }]
+}

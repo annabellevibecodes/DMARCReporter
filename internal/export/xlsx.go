@@ -117,6 +117,29 @@ func writeAnalyticsSheet(f *excelize.File, rd *ReportData, headerStyle, subHeade
 		section("New Sources This Period")
 		table(newSourceHeaders, rows)
 	}
+	section("SMTP TLS Reporting (RFC 8460)")
+	if kvRows := tlsSummaryKV(rd); len(kvRows) > 0 {
+		kv(kvRows)
+		if rows := tlsPolicyRows(rd); len(rows) > 0 {
+			section("TLS Policy Applied")
+			table(tlsPolicyHeaders, rows)
+		}
+		if rows := tlsFailureRows(rd); len(rows) > 0 {
+			section("TLS Failures by Result Type")
+			table(tlsFailureHeaders, rows)
+		}
+		if rows := tlsReceiverRows(rd); len(rows) > 0 {
+			section("TLS Top Failing Receivers")
+			table(tlsReceiverHeaders, rows)
+		}
+		if rows := tlsAlertRows(rd); len(rows) > 0 {
+			section("Open TLS Alerts")
+			table(tlsAlertHeaders, rows)
+		}
+	} else {
+		kv([][2]string{{"TLS reports", "none for this period"}})
+	}
+
 	if rows := alertRows(rd); len(rows) > 0 {
 		section("Open Alerts")
 		table(alertHeaders, rows)

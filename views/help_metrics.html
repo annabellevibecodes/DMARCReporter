@@ -11,6 +11,7 @@
   <a href="#auth">A1–A8 Authentication</a> &middot;
   <a href="#policy">P1–P6 Policy</a> &middot;
   <a href="#reporters">R1–R8 Reporters</a> &middot;
+  <a href="#tls">T1–T15 TLS</a> &middot;
   <a href="#windows">Windows &amp; comparisons</a>
 </nav>
 
@@ -31,6 +32,7 @@
       <tr><td><strong>A</strong> — Authentication</td><td>The raw DKIM and SPF detail behind the pass/fail verdict</td><td>Domain detail</td></tr>
       <tr><td><strong>P</strong> — Policy</td><td>Your published DMARC record as reporters actually saw it</td><td>Domain detail</td></tr>
       <tr><td><strong>R</strong> — Reporters</td><td>Who sends you reports, how promptly, and report hygiene</td><td><a href="/reporters">Reporters</a></td></tr>
+      <tr><td><strong>T</strong> — TLS</td><td>SMTP TLS reporting (RFC 8460): session success, the policy applied, and why connections failed</td><td><a href="/tlsrpt">TLS reports</a></td></tr>
       <tr><td><strong>X</strong> — Alerts</td><td>The rules that raise alerts — see <a href="/help/alerts">Alerts &amp; health</a></td><td><a href="/alerts">Alerts</a></td></tr>
     </tbody>
   </table>
@@ -266,6 +268,74 @@
       </tr>
     </tbody>
   </table>
+</article>
+
+<!-- TLS -->
+<article class="help-chapter" id="tls">
+  <header><h2>T1–T15 — TLS reporting</h2></header>
+  <p>
+    The T series covers SMTP TLS reports (RFC 8460), which describe the <em>transport security</em>
+    of connections to your mail servers: whether TLS was negotiated, under which policy, and what
+    went wrong when it failed. They say nothing about authentication — a session can be counted
+    here as a success and still be mail that fails DMARC.
+  </p>
+  <h3>Two counting rules worth knowing</h3>
+  <p>
+    <strong>Sessions come from the summary, never from the failure rows.</strong> Result types are
+    explicitly non-exclusive: one session that hit several errors is reported once per error. So
+    the failure-detail tables (T4–T7, T10, T11, T14, T15) count failure <em>observations</em>, and
+    their total can exceed the session total in T1. Only the policy summary is a session count.
+  </p>
+  <p>
+    <strong>One report can describe the same sessions twice.</strong> A reporter that applied both
+    an MTA-STS policy and a TLSA record for the same domain and MX host sends two policy entries
+    covering one set of sessions. Session metrics collapse entries sharing a domain and MX pattern
+    by taking the larger count, not the sum. The reports are stored exactly as they arrived, so
+    the per-report view still shows what the reporter actually sent.
+  </p>
+  <table>
+    <thead><tr><th style="white-space:nowrap;">ID</th><th>Metric</th><th>What it measures</th></tr></thead>
+    <tbody>
+      <tr><td><code>T1</code></td><td>TLS success rate</td>
+          <td>Successful sessions as a share of all attempted sessions, overall, per day and per policy domain, with a delta against the preceding window. The headline number.</td></tr>
+      <tr><td><code>T2</code></td><td>Volume and reporter share</td>
+          <td>Sessions per day and per reporting organisation. Shows both the session-weighted rate and the median of the per-reporter rates — one hyperscaler sending most of the volume otherwise masks a small receiver that fails every time.</td></tr>
+      <tr><td><code>T3</code></td><td>Policy-type mix</td>
+          <td>Share of sessions under <code>sts</code>, <code>tlsa</code> or <code>no-policy-found</code>, overall and per reporter. The <code>no-policy-found</code> share is the adoption number for your MTA-STS or DANE rollout. Sessions reported under two policy types count under each, so shares can exceed 100%.</td></tr>
+      <tr><td><code>T4</code></td><td>Failures by result type</td>
+          <td>Failure volume per result type, grouped as the RFC groups them: negotiation (<code>starttls-not-supported</code>, the certificate errors, <code>validation-failure</code>), DANE (<code>tlsa-invalid</code>, <code>dnssec-invalid</code>, <code>dane-required</code>), MTA-STS (the three <code>sts-*</code> errors), plus anything outside the IANA registry.</td></tr>
+      <tr><td><code>T5</code></td><td>Failures by receiver</td>
+          <td>By receiving MX host, by receiving IP and by HELO name. The per-IP view is the valuable one: a load-balanced or anycast MX shows one bad node while the rest are healthy, and only the IP split reveals it. A HELO that does not match its MX host is itself a finding.</td></tr>
+      <tr><td><code>T6</code></td><td>Failures by sender</td>
+          <td>By sending MTA, rolled up to network (IPv4 /24, IPv6 /64) and to provider using the same cached reverse DNS and WHOIS as <a href="/sources">Senders</a>. Answers "one broken node, or everyone?". These hosts send mail <em>to</em> you and are not the same population as DMARC source IPs, so they carry no behaviour classification.</td></tr>
+      <tr><td><code>T7</code></td><td>Top failure reasons</td>
+          <td>Frequency of <code>failure-reason-code</code> (typically <code>X509_V_ERR_*</code>), overall and within each result type. Free text in the RFC, but repetitive in practice — this is where the root cause behind <code>validation-failure</code> and <code>certificate-not-trusted</code> lives.</td></tr>
+      <tr><td><code>T8</code></td><td>Policy divergence</td>
+          <td>More than one distinct policy string reported for the same domain on the same day, which means a stale cache somewhere or a divergent policy being served. Comparison against your <em>currently published</em> policy arrives with the DNS snapshots in a later phase.</td></tr>
+      <tr><td><code>T9</code></td><td>MTA-STS mode and readiness</td>
+          <td>The distribution of observed <code>mode</code> values, and the direct analogue of DMARC enforcement readiness (<a href="#policy">P6</a>): what the failures observed while in <code>testing</code> would have cost had the policy been in <code>enforce</code>.</td></tr>
+      <tr><td><code>T10</code></td><td>MTA-STS endpoint health</td>
+          <td><code>sts-policy-fetch-error</code>, <code>sts-webpki-invalid</code> and <code>sts-policy-invalid</code> over time. These are about the <code>mta-sts.&lt;domain&gt;</code> HTTPS host and the policy file it serves, not about your MX hosts, which is why they have their own panel.</td></tr>
+      <tr><td><code>T11</code></td><td>DANE and DNSSEC health</td>
+          <td><code>tlsa-invalid</code>, <code>dnssec-invalid</code> and <code>dane-required</code>, listed with the organisation that reported each one. Every <code>dane-required</code> is a named partner who has pinned mandatory DANE for your domain.</td></tr>
+      <tr><td><code>T12</code></td><td>TLS reporter coverage</td>
+          <td>Distinct reporters, newly seen reporters, lapsed reporters, days in the period with no report at all, and arrival latency (mail date minus window end). Absence is the point: an attacker suppressing your <code>_smtp._tls</code> record also suppresses the reports.</td></tr>
+      <tr><td><code>T13</code></td><td>TLS hygiene</td>
+          <td>Duplicates, report-IDs reused across different windows, parse errors, DKIM-rejected reports by reason, unattributed failures, multi-policy reports, odd or multi-day windows, filename/body disagreements, unregistered result types, malformed IPs, and the transport and compression split.</td></tr>
+      <tr><td><code>T14</code></td><td>IPv4 vs IPv6</td>
+          <td>How failures divide between address families, for sending and receiving addresses. Broken-on-one-stack-only is common and invisible in an aggregate figure. Note that RFC 8460 puts addresses on failure rows only — a successful session carries none — so this is a split of failures, not a per-family success rate.</td></tr>
+      <tr><td><code>T15</code></td><td>TLS incidents</td>
+          <td>Consecutive days sharing the same result type and receiving MX host, with first seen, last seen and duration. Turns a spiky chart into a list an operator can work through.</td></tr>
+    </tbody>
+  </table>
+  <h3>What is counted</h3>
+  <p>
+    A TLS report that arrived as mail without a valid DKIM signature is excluded from every metric
+    above while <code>TLSRPT_REQUIRE_DKIM</code> is on (the default), because RFC 8460 §3 requires
+    receivers to ignore such reports. It is still stored and still listed, with the reason, and
+    T13 counts how many were held back. Reports uploaded through the web form have no carrying
+    message and are never excluded by that rule.
+  </p>
 </article>
 
 <!-- Windows -->

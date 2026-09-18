@@ -1,0 +1,29 @@
+{
+  "organization-name": "Reporter-P",
+  "date-range": {
+    "start-datetime": "2026-09-12T00:00:00Z",
+    "end-datetime": "2026-09-12T23:59:59Z"
+  },
+  "contact-info": "tlsrpt@reporter-p.example",
+  "report-id": "pattern-1",
+  "policies": [{
+    "policy": {
+      "policy-type": "sts",
+      "policy-string": ["version: STSv1","mode: enforce","mx: *.mail.example.com","mx: mx-backup.example.com","max_age: 604800"],
+      "policy-domain": "example.com",
+      "mx-host": ["*.mail.example.com", "mx-backup.example.com"]
+    },
+    "summary": {
+      "total-successful-session-count": 64,
+      "total-failure-session-count": 2
+    },
+    "failure-details": [{
+      "result-type": "certificate-host-mismatch",
+      "sending-mta-ip": "198.51.100.77",
+      "receiving-mx-hostname": "mx3.mail.example.com",
+      "receiving-mx-helo": "mail-out.example.net",
+      "receiving-ip": "203.0.113.77",
+      "failed-session-count": 2
+    }]
+  }]
+}

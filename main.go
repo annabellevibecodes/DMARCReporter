@@ -105,8 +105,8 @@ func main() {
 			"font-src 'self'; " +
 			"connect-src 'self'; " +
 			"frame-ancestors 'none';",
-		XFrameOptions:   "DENY",
-		ReferrerPolicy:  "strict-origin-when-cross-origin",
+		XFrameOptions:    "DENY",
+		ReferrerPolicy:   "strict-origin-when-cross-origin",
 		PermissionPolicy: "camera=(), microphone=(), geolocation=(), payment=()",
 	}
 	if cfg.HSTSEnabled {
@@ -192,6 +192,7 @@ func main() {
 	// Domain and source detail pages trigger live DNS/WHOIS lookups — rate-limited.
 	detailLimiter := limiter.New(limiter.Config{Max: 30, Expiration: 1 * time.Minute})
 	app.Get("/domains/:domain", detailLimiter, a.HandleDomainDetail)
+	app.Get("/tlsrpt/:id", detailLimiter, a.HandleTLSRPTDetail)
 	app.Get("/help", a.HandleHelpPage)
 	app.Get("/help/:section", a.HandleHelpPage)
 	app.Get("/reporters", a.HandleReportersPage)
@@ -217,6 +218,10 @@ func main() {
 	app.Get("/api/policy", apiLimiter, a.HandleAPIPolicy)
 	app.Post("/api/selectors/expected", apiLimiter, a.HandleAPISelectorExpected)
 	app.Get("/api/reporters", apiLimiter, a.HandleAPIReporters)
+	app.Get("/api/tls", apiLimiter, a.HandleAPITLS)
+	app.Get("/api/tls/failures", apiLimiter, a.HandleAPITLSFailures)
+	app.Get("/api/tls/policies", apiLimiter, a.HandleAPITLSPolicies)
+	app.Get("/api/tls/reporters", apiLimiter, a.HandleAPITLSReporters)
 	app.Get("/api/managed-domains", apiLimiter, a.HandleAPIManagedDomainsList)
 	app.Post("/api/managed-domains", apiLimiter, a.HandleAPIManagedDomainAdd)
 	app.Delete("/api/managed-domains", apiLimiter, a.HandleAPIManagedDomainDelete)

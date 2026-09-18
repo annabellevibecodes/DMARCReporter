@@ -1,0 +1,126 @@
+<h1>TLS report <small style="font-size:0.8rem;font-weight:normal;color:var(--pico-muted-color);">&middot; {{.Report.OrgName}}</small></h1>
+<p style="color:var(--pico-muted-color);">
+  <a href="/tlsrpt">← TLS analysis</a> &middot; <a href="/reports/tlsrpt">report list</a> &middot;
+  <a href="/reports/tlsrpt/{{.Report.ID}}/json">download original JSON</a>
+</p>
+
+<div class="ax">
+
+  {{if not .Counted}}
+  <div class="health-banner critical mb">
+    This report is <b>excluded from the TLS metrics</b>: it arrived as mail with
+    <code>dkim_status={{.Report.DKIMStatus}}</code>, and RFC 8460 §3 requires receivers to ignore
+    unsigned reports (<code>TLSRPT_REQUIRE_DKIM</code>). It is kept and shown here so you can see
+    what was rejected and why.{{if .Report.DKIMDetail}} <span class="subtle">{{.Report.DKIMDetail}}</span>{{end}}
+  </div>
+  {{end}}
+
+  <div class="grid two-col mb">
+    <div class="card">
+      <div class="section-head"><h2>Report</h2></div>
+      <dl class="kv" style="grid-template-columns:auto 1fr;">
+        <dt>Reporter</dt><dd>{{.Report.OrgName}}</dd>
+        <dt>Contact</dt><dd>{{orDefault .Report.ContactInfo "—"}}</dd>
+        <dt>Report ID</dt><dd class="mono">{{.Report.ReportID}}</dd>
+        <dt>Window</dt><dd class="mono">{{unixDateTime .Report.DateRangeBegin}} — {{unixDateTime .Report.DateRangeEnd}}
+          <span class="subtle">({{if gt .WindowSeconds 86400}}{{div (add64 .WindowSeconds 43200) 86400}}d{{else}}{{div (add64 .WindowSeconds 1800) 3600}}h{{end}})</span></dd>
+        <dt>Received</dt><dd class="mono">{{if .Report.ReceivedAt}}{{unixDateTime .Report.ReceivedAt}}{{else}}—{{end}}</dd>
+        <dt>Imported</dt><dd class="mono">{{unixDateTime .Report.ImportedAt}}</dd>
+        <dt>Source file</dt><dd class="mono subtle">{{orDefault .Report.SourceFilename "—"}}</dd>
+        <dt>Transport</dt><dd>{{.Transport}}</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <div class="section-head"><h2>Authentication of the carrying mail</h2></div>
+      <dl class="kv" style="grid-template-columns:auto 1fr;">
+        <dt>DKIM</dt>
+        <dd>
+          {{if eq .Report.Transport "upload"}}<span class="badge neutral">not applicable — uploaded file</span>
+          {{else if eq .Report.DKIMStatus "valid"}}<span class="badge pass">valid</span>
+          {{else}}<span class="badge fail">{{.Report.DKIMStatus}}</span>{{end}}
+        </dd>
+        <dt>Signing domain</dt><dd class="mono">{{orDefault .Report.DKIMDomain "—"}}</dd>
+        <dt>Selector</dt><dd class="mono">{{orDefault .Report.DKIMSelector "—"}}</dd>
+        <dt>Key has <code>s=tlsrpt</code></dt><dd>{{if .Report.DKIMServiceTLSRPT}}yes{{else}}no{{end}}</dd>
+        <dt>Signer covers contact domain</dt><dd>{{if .Report.DKIMMatchesContact}}yes{{else}}no{{end}}</dd>
+        <dt>TLS-Report-Domain</dt><dd class="mono">{{orDefault .Report.ReportDomain "—"}}</dd>
+        <dt>TLS-Report-Submitter</dt><dd class="mono">{{orDefault .Report.SubmitterDomain "—"}}</dd>
+        {{if .Report.DKIMDetail}}<dt>Detail</dt><dd class="subtle">{{.Report.DKIMDetail}}</dd>{{end}}
+      </dl>
+    </div>
+  </div>
+
+  {{if or .Report.MultiPolicy .Report.UnattributedFailures .Report.MalformedIPs .Report.UnknownResultTypes .Report.RangeVariance}}
+  <div class="card mb">
+    <div class="section-head"><h2>Notes on this report <span class="subtle">{{metric "T13"}}</span></h2></div>
+    <ul style="margin:0;padding-left:18px;font-size:12.5px;">
+      {{if .Report.MultiPolicy}}<li>Two or more policy entries describe the same domain and MX pattern. The totals on <a href="/tlsrpt">the analysis page</a> count those sessions once; the per-policy counts below are as sent.</li>{{end}}
+      {{if .Report.UnattributedFailures}}<li>{{commaN .Report.UnattributedFailures}} failed session(s) are not accounted for by any failure-detail row.</li>{{end}}
+      {{if .Report.MalformedIPs}}<li>{{.Report.MalformedIPs}} address(es) did not parse and are stored empty.</li>{{end}}
+      {{if .Report.UnknownResultTypes}}<li>{{.Report.UnknownResultTypes}} result type(s) are outside the IANA registry; they are kept verbatim.</li>{{end}}
+      {{if .Report.RangeVariance}}<li>The filename's date range disagrees with the body. The body wins (RFC 8460 §5.6).</li>{{end}}
+    </ul>
+  </div>
+  {{end}}
+
+  {{range .Policies}}
+  <div class="card mb">
+    <div class="section-head">
+      <h2>Policy {{add .PolicyIndex 1}} — <span class="mono">{{orDefault .PolicyType "(unspecified)"}}</span> for <span class="mono">{{orDefault .PolicyDomain "(no domain)"}}</span></h2>
+      <span class="section-sub">{{commaN .SuccessCount}} successful · {{commaN .FailureCount}} failed</span>
+    </div>
+
+    <div class="grid two-col">
+      <div>
+        <dl class="kv" style="grid-template-columns:auto 1fr;">
+          {{if .STSVersion}}<dt>Version</dt><dd class="mono">{{.STSVersion}}</dd>{{end}}
+          {{if .STSMode}}<dt>Mode</dt><dd><span class="badge {{if eq .STSMode "enforce"}}pass{{else}}warn{{end}}">{{.STSMode}}</span></dd>{{end}}
+          {{if .STSMaxAge}}<dt>max_age</dt><dd class="mono">{{commaN .STSMaxAge}}s</dd>{{end}}
+          {{if .MXPatterns}}<dt>mx</dt><dd class="mono">{{range .MXPatterns}}{{.}}<br>{{end}}</dd>{{end}}
+          {{if .UnattributedFailures}}<dt>Unattributed failures</dt><dd>{{commaN .UnattributedFailures}}</dd>{{end}}
+        </dl>
+      </div>
+      {{if .Lines}}
+      <div>
+        <div class="u-label mb">Policy as the sender applied it</div>
+        <pre class="payload" style="white-space:pre-wrap;">{{range .Lines}}{{.}}
+{{end}}</pre>
+      </div>
+      {{end}}
+    </div>
+
+    {{if .Failures}}
+    <div class="table-wrap mt"><table class="data">
+      <thead><tr>
+        <th>Result type</th><th class="num">Sessions</th><th>Sending MTA</th>
+        <th>Receiving host</th><th>HELO</th><th>Receiving IP</th><th>Reason</th>
+      </tr></thead>
+      <tbody>
+      {{range .Failures}}
+      <tr>
+        <td class="mono-cell">{{.ResultType}}</td>
+        <td class="num mono-cell">{{commaN .FailedSessionCount}}</td>
+        <td class="mono-cell">{{if .SendingMTAIP.Valid}}{{.SendingMTAIP.String}}{{else}}<span class="subtle">unspecified</span>{{end}}</td>
+        <td class="mono-cell">{{orDefault .ReceivingMXHostname "—"}}</td>
+        <td class="mono-cell subtle">{{orDefault .ReceivingMXHelo "—"}}</td>
+        <td class="mono-cell">{{if .ReceivingIP.Valid}}{{.ReceivingIP.String}}{{else}}<span class="subtle">unspecified</span>{{end}}</td>
+        <td class="subtle">{{orDefault .FailureReasonCode "—"}}{{if .AdditionalInformation}}<div class="subtle">{{.AdditionalInformation}}</div>{{end}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    {{else}}
+    <div class="footnote mt">No failure detail was sent for this policy.</div>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if .DetailTotal}}
+  <div class="footnote">
+    The failure rows above account for {{commaN .DetailTotal}} session-failures. Result types are not
+    exclusive, so that figure can exceed the failed-session totals the policies reported.
+  </div>
+  {{end}}
+
+</div>

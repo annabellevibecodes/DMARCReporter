@@ -1,52 +1,548 @@
 <h1>SMTP TLS Reports</h1>
-<p>Reports (RFC 8460) from receivers about the TLS security of connections to your mail servers. Failures here mean senders could not establish (or validate) an encrypted connection — check your MTA-STS policy and certificates.</p>
+<p style="color:var(--pico-muted-color);">
+  How mail servers fared negotiating TLS with yours (RFC 8460). These reports describe transport
+  security only — a session counted as a success here can still be mail that fails DMARC.
+</p>
 
-<form method="GET" action="/tlsrpt" style="margin-bottom:1rem;">
-  <select name="period" data-autosubmit style="width:auto;display:inline-block;">
-    {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
-  </select>
+<form method="GET" action="/tlsrpt" style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;flex-wrap:wrap;">
+    <select name="period" data-autosubmit style="width:auto;margin:0;">
+        {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+    <select name="domain" data-autosubmit style="width:auto;margin:0;max-width:280px;">
+        <option value="">— all domains —</option>
+        {{range .Domains}}<option value="{{.}}"{{if eq . $.SelectedDomain}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+    {{if .MXHost}}<input type="hidden" name="mx" value="{{.MXHost}}">{{end}}
+    {{if .ReceivingIP}}<input type="hidden" name="rip" value="{{.ReceivingIP}}">{{end}}
 </form>
 
-<div class="grid">
-  <article>
-    <header>Reports</header>
-    <strong style="font-size:1.6rem">{{commaN .Summary.ReportCount}}</strong>
-  </article>
-  <article>
-    <header>Successful sessions</header>
-    <strong style="font-size:1.6rem">{{commaN .Summary.TotalSuccess}}</strong>
-  </article>
-  <article>
-    <header>Failed sessions</header>
-    <strong style="font-size:1.6rem">{{commaN .Summary.TotalFailure}}</strong>
-  </article>
-</div>
+<div class="ax">
 
-{{if .Reports}}
-<figure>
-<table>
-  <thead>
-    <tr>
-      <th>Reporter</th>
-      <th>Domains</th>
-      <th>Period</th>
-      <th style="text-align:right">OK</th>
-      <th style="text-align:right">Failed</th>
-    </tr>
-  </thead>
-  <tbody>
-  {{range .Reports}}
-    <tr>
-      <td>{{.OrgName}}</td>
-      <td>{{range splitComma .PolicyDomains}}<span>{{.}}</span> {{end}}</td>
-      <td>{{unixTime .DateRangeBegin}} — {{unixTime .DateRangeEnd}}</td>
-      <td style="text-align:right">{{commaN .TotalSuccess}}</td>
-      <td style="text-align:right">{{if gt .TotalFailure 0}}<strong>{{commaN .TotalFailure}}</strong>{{else}}0{{end}}</td>
-    </tr>
+  {{if .ActiveFilters}}
+  <div class="toolbar" style="margin-bottom:14px;">
+    <span class="u-label">Filtered by</span>
+    {{range .ActiveFilters}}<a class="filter-chip active" href="{{.Href}}" title="Remove this filter">{{.Label}} ✕</a>{{end}}
+    <a class="filter-chip" href="{{$.ClearAllHref}}">Clear all</a>
+  </div>
   {{end}}
-  </tbody>
-</table>
-</figure>
-{{else}}
-<p><em>No TLS reports for this period. They arrive in the same mailbox as DMARC reports once you publish a <code>_smtp._tls</code> TXT record (TLSRPT).</em></p>
-{{end}}
+
+  {{if .DrillDown}}
+  <div class="footnote mb">
+    A receiving host or node filter narrows the failure tables only. Session counts come from the
+    policy summaries, which carry no addresses at all, so the rate and volume figures below stay
+    scoped to the period{{if .SelectedDomain}} and domain{{end}}.
+  </div>
+  {{end}}
+
+  {{with .T}}
+  <!-- T1 / T2 headline -->
+  <div class="kpi-row mb">
+    <div class="kpi">
+      <span class="u-label">TLS success rate {{metric "T1"}}</span>
+      <div class="kpi-value-row">
+        <span class="kpi-value">{{pct1 .Rate.Rate}}<small>%</small></span>
+        {{if .RateDelta}}
+          {{if gt (deref .RateDelta) 0.0}}<span class="delta up">▲ {{pct1 (deref .RateDelta)}} pts</span>
+          {{else if lt (deref .RateDelta) 0.0}}<span class="delta down">▼ {{pct1 (deref .RateDelta)}} pts</span>
+          {{else}}<span class="delta flat">no change</span>{{end}}
+        {{end}}
+      </div>
+      <div class="kpi-label-tag">{{commaN .Rate.Success}} of {{commaN .Rate.Total}} sessions</div>
+    </div>
+    <div class="kpi">
+      <span class="u-label">Failed sessions {{metric "T1"}}</span>
+      <div class="kpi-value-row"><span class="kpi-value">{{commaN .Rate.Failure}}</span></div>
+      <div class="kpi-label-tag">{{if .Failures.Total}}{{commaN .Failures.Total}} failure observations{{else}}no failure detail reported{{end}}</div>
+    </div>
+    <div class="kpi">
+      <span class="u-label">Reporters {{metric "T2"}}</span>
+      <div class="kpi-value-row"><span class="kpi-value">{{.Volume.ReporterCount}}</span></div>
+      <div class="kpi-label-tag">median rate {{pct1 .Volume.MedianReporterRate}}% · weighted {{pct1 .Volume.WeightedRate}}%</div>
+    </div>
+    <div class="kpi">
+      <span class="u-label">Reports {{metric "T13"}}</span>
+      <div class="kpi-value-row"><span class="kpi-value">{{commaN .Hygiene.Reports}}</span></div>
+      <div class="kpi-label-tag">{{if .Hygiene.Excluded}}{{.Hygiene.Excluded}} excluded (unsigned){{else}}all counted{{end}}</div>
+    </div>
+  </div>
+
+  {{if .Rollup.MultiPolicyReports}}
+  <div class="health-banner warning mb">
+    {{.Rollup.MultiPolicyReports}} report{{if ne .Rollup.MultiPolicyReports 1}}s{{end}} in this period
+    describe{{if eq .Rollup.MultiPolicyReports 1}}s{{end}} the same sessions under more than one policy entry —
+    typically an MTA-STS policy and a TLSA record for one domain and MX host. Those sessions are counted
+    once here, not once per policy. The per-report view shows what each reporter actually sent.
+  </div>
+  {{end}}
+
+  {{if eq .Rate.Total 0}}
+  <div class="card mb">
+    <div class="empty-state">
+      <div class="glyph">◌</div>
+      No TLS sessions reported for this period.
+      {{if $.RequireDKIM}}{{if .Hygiene.Excluded}}
+      <div class="subtle mt">{{.Hygiene.Excluded}} report(s) arrived unsigned and are excluded — see hygiene below.</div>
+      {{end}}{{end}}
+      <div class="subtle mt">Reports arrive in the same mailbox as DMARC once you publish a <code>_smtp._tls</code> TXT record.</div>
+    </div>
+  </div>
+  {{else}}
+
+  <!-- T1 daily series -->
+  {{if .Volume.ByDay}}
+  <div class="card mb">
+    <div class="section-head"><h2>Sessions per day <span class="subtle">{{metric "T1"}} · {{metric "T2"}}</span></h2><span class="section-sub">{{$.PeriodLabel}} · newest first</span></div>
+    <div class="table-wrap" style="max-height:360px;overflow:auto;"><table class="data">
+      <thead><tr><th>Day</th><th class="num">Successful</th><th class="num">Failed</th><th class="num">Rate</th><th style="width:36%">Share failed</th></tr></thead>
+      <tbody>
+      {{range $.DaysDesc}}
+      <tr>
+        <td class="mono-cell">{{.Day}}</td>
+        <td class="num mono-cell">{{commaN .Success}}</td>
+        <td class="num mono-cell">{{if .Failure}}<b>{{commaN .Failure}}</b>{{else}}0{{end}}</td>
+        <td class="num mono-cell">{{pct1 .Rate}}%</td>
+        <td><div class="hbar"><div class="fail" style="width:{{widthPct .Failure (add64 .Success .Failure)}}%"></div></div></td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+  </div>
+  {{end}}
+
+  <div class="grid two-col mb">
+    <!-- T1 per domain -->
+    <div class="card">
+      <div class="section-head"><h2>By policy domain <span class="subtle">{{metric "T1"}}</span></h2></div>
+      {{if .ByDomain}}
+      <div class="table-wrap"><table class="data">
+        <thead><tr>
+          <th class="{{sortClass "domain" $.SortBy}}"><a href="{{sortHref "/tlsrpt" $.BaseQuery "domain" $.SortBy $.SortDir}}">Domain{{sortMark "domain" $.SortBy $.SortDir}}</a></th>
+          <th class="num {{sortClass "sessions" $.SortBy}}"><a href="{{sortHref "/tlsrpt" $.BaseQuery "sessions" $.SortBy $.SortDir}}">Sessions{{sortMark "sessions" $.SortBy $.SortDir}}</a></th>
+          <th class="num {{sortClass "failures" $.SortBy}}"><a href="{{sortHref "/tlsrpt" $.BaseQuery "failures" $.SortBy $.SortDir}}">Failed{{sortMark "failures" $.SortBy $.SortDir}}</a></th>
+          <th class="num {{sortClass "rate" $.SortBy}}"><a href="{{sortHref "/tlsrpt" $.BaseQuery "rate" $.SortBy $.SortDir}}">Rate{{sortMark "rate" $.SortBy $.SortDir}}</a></th>
+        </tr></thead>
+        <tbody>
+        {{range .ByDomain}}
+        <tr>
+          <td><a href="/tlsrpt?period={{$.SelectedPeriod}}&domain={{.PolicyDomain}}">{{.PolicyDomain}}</a></td>
+          <td class="num mono-cell">{{commaN .Total}}</td>
+          <td class="num mono-cell">{{if .Failure}}<b>{{commaN .Failure}}</b>{{else}}0{{end}}</td>
+          <td class="num mono-cell {{passClass .Rate}}">{{pct1 .Rate}}%</td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table></div>
+      {{else}}<div class="empty-state">No sessions in this window.</div>{{end}}
+    </div>
+
+    <!-- T3 policy mix -->
+    <div class="card">
+      <div class="section-head"><h2>Policy applied <span class="subtle">{{metric "T3"}}</span></h2></div>
+      {{if .PolicyMix.Overall}}
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>Policy type</th><th class="num">Sessions</th><th class="num">Share</th></tr></thead>
+        <tbody>
+        {{range .PolicyMix.Overall}}
+        <tr>
+          <td class="mono-cell">{{.PolicyType}}</td>
+          <td class="num mono-cell">{{commaN .Sessions}}</td>
+          <td class="num mono-cell">{{pct1 .Share}}%</td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table></div>
+      <div class="footnote">
+        The <code>no-policy-found</code> share is your MTA-STS / DANE adoption gap.
+        {{if .PolicyMix.MultiPolicySessions}}
+        {{commaN .PolicyMix.MultiPolicySessions}} sessions were reported under more than one policy type and
+        count under each, so shares can exceed 100%.
+        {{end}}
+      </div>
+      {{else}}<div class="empty-state">No policies reported.</div>{{end}}
+    </div>
+  </div>
+
+  <!-- T4 failures by result type -->
+  {{if .Failures.Types}}
+  <div class="card mb">
+    <div class="section-head">
+      <h2>Why sessions failed <span class="subtle">{{metric "T4"}}</span></h2>
+      <span class="section-sub">{{commaN .Failures.Total}} failure observations</span>
+    </div>
+    <div class="grid two-col">
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>Result type</th><th>Group</th><th class="num">Sessions</th><th class="num">Share</th></tr></thead>
+        <tbody>
+        {{range .Failures.Types}}
+        <tr>
+          <td class="mono-cell">{{.ResultType}}</td>
+          <td><span class="badge {{if eq .Group "dane"}}warn{{else if eq .Group "mta-sts"}}warn{{else if eq .Group "unregistered"}}neutral{{else}}fail{{end}}">{{.Group}}</span></td>
+          <td class="num mono-cell">{{commaN .FailedSessions}}</td>
+          <td class="num mono-cell">{{pct1 .Share}}%</td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table></div>
+      <div>
+        <table class="data">
+          <thead><tr><th>Group</th><th class="num">Sessions</th><th style="width:40%"></th></tr></thead>
+          <tbody>
+          {{range .Failures.Groups}}
+          <tr>
+            <td>{{.ResultType}}</td>
+            <td class="num mono-cell">{{commaN .FailedSessions}}</td>
+            <td><div class="hbar"><div class="fail" style="width:{{pct1 .Share}}%"></div></div></td>
+          </tr>
+          {{end}}
+          </tbody>
+        </table>
+        <div class="footnote">
+          Result types are not exclusive: one session hitting several errors is reported once per error,
+          so these add up to more than the {{commaN .Rate.Failure}} failed sessions above.
+        </div>
+      </div>
+    </div>
+  </div>
+  {{end}}
+
+  <!-- T5 receivers -->
+  {{if .Receivers.ByHost}}
+  <div class="card mb">
+    <div class="section-head"><h2>Failing receivers <span class="subtle">{{metric "T5"}}</span></h2><span class="section-sub">your MX hosts, as the sender saw them</span></div>
+    <div class="grid two-col">
+      <div>
+        <div class="u-label mb">By MX host</div>
+        <div class="table-wrap"><table class="data">
+          <thead><tr>
+            <th class="{{sortClass "host" $.SortBy}}"><a href="{{sortHref "/tlsrpt" $.BaseQuery "host" $.SortBy $.SortDir}}">Host{{sortMark "host" $.SortBy $.SortDir}}</a></th>
+            <th class="num {{sortClass "ips" $.SortBy}}"><a href="{{sortHref "/tlsrpt" $.BaseQuery "ips" $.SortBy $.SortDir}}">Nodes{{sortMark "ips" $.SortBy $.SortDir}}</a></th>
+            <th class="num {{sortClass "failures" $.SortBy}}"><a href="{{sortHref "/tlsrpt" $.BaseQuery "failures" $.SortBy $.SortDir}}">Failed{{sortMark "failures" $.SortBy $.SortDir}}</a></th>
+          </tr></thead>
+          <tbody>
+          {{range .Receivers.ByHost}}
+          <tr>
+            <td class="mono-cell"><a href="/tlsrpt?period={{$.SelectedPeriod}}{{if $.SelectedDomain}}&domain={{$.SelectedDomain}}{{end}}&mx={{.MXHostname}}">{{.MXHostname}}</a></td>
+            <td class="num mono-cell">{{.DistinctIPs}}</td>
+            <td class="num mono-cell">{{commaN .FailedSessions}}</td>
+          </tr>
+          {{end}}
+          </tbody>
+        </table></div>
+      </div>
+      <div>
+        <div class="u-label mb">By receiving node</div>
+        {{if .Receivers.ByIP}}
+        <div class="table-wrap"><table class="data">
+          <thead><tr><th>IP</th><th>Host</th><th class="num">Failed</th></tr></thead>
+          <tbody>
+          {{range .Receivers.ByIP}}
+          <tr>
+            <td class="mono-cell"><a href="/tlsrpt?period={{$.SelectedPeriod}}{{if $.SelectedDomain}}&domain={{$.SelectedDomain}}{{end}}&rip={{.ReceivingIP}}">{{.ReceivingIP}}</a></td>
+            <td class="mono-cell subtle">{{.MXHostname}}</td>
+            <td class="num mono-cell">{{commaN .FailedSessions}}</td>
+          </tr>
+          {{end}}
+          </tbody>
+        </table></div>
+        <div class="footnote">One bad node behind a healthy-looking MX name only shows up here.
+          {{if .Receivers.UnspecifiedIP}}{{commaN .Receivers.UnspecifiedIP}} failed sessions came with no receiving IP.{{end}}
+        </div>
+        {{else}}<div class="empty-state">No reporter gave a receiving IP.</div>{{end}}
+      </div>
+    </div>
+    {{if .Receivers.HeloMismatches}}
+    <div class="mt">
+      <div class="u-label mb">HELO does not match the MX host</div>
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>MX host</th><th>HELO</th><th class="num">Failed</th></tr></thead>
+        <tbody>
+        {{range .Receivers.HeloMismatches}}
+        <tr><td class="mono-cell">{{.MXHostname}}</td><td class="mono-cell">{{.Helo}}</td><td class="num mono-cell">{{commaN .FailedSessions}}</td></tr>
+        {{end}}
+        </tbody>
+      </table></div>
+      <div class="footnote">A HELO name that disagrees with the host it answers on is a finding in itself, and a common cause of certificate-host-mismatch.</div>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  <div class="grid two-col mb">
+    <!-- T6 senders -->
+    <div class="card">
+      <div class="section-head"><h2>Failing senders <span class="subtle">{{metric "T6"}}</span></h2></div>
+      {{if .Senders.ByNetwork}}
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>Network</th><th>Provider</th><th class="num">IPs</th><th class="num">Failed</th></tr></thead>
+        <tbody>
+        {{range .Senders.ByNetwork}}
+        <tr>
+          <td class="mono-cell">{{.Network}}</td>
+          <td class="subtle">{{orDefault .WhoisOrg "—"}}</td>
+          <td class="num mono-cell">{{.IPs}}</td>
+          <td class="num mono-cell">{{commaN .FailedSessions}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table></div>
+      <div class="footnote">
+        Hosts sending mail <em>to</em> you, grouped by /24 (IPv4) or /64 (IPv6). A different population from
+        <a href="/sources">Senders</a>, so they carry no behaviour classification — only the shared rDNS and WHOIS.
+      </div>
+      {{else}}<div class="empty-state">No sending addresses reported.</div>{{end}}
+    </div>
+
+    <!-- T7 reasons -->
+    <div class="card">
+      <div class="section-head"><h2>Failure reasons <span class="subtle">{{metric "T7"}}</span></h2></div>
+      {{if .Reasons.Overall}}
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>Reason code</th><th class="num">Sessions</th></tr></thead>
+        <tbody>
+        {{range .Reasons.Overall}}
+        <tr><td class="mono-cell">{{.ReasonCode}}</td><td class="num mono-cell">{{commaN .FailedSessions}}</td></tr>
+        {{end}}
+        </tbody>
+      </table></div>
+      {{else}}<div class="empty-state">No reporter gave a reason code.</div>{{end}}
+      {{if .Reasons.WithoutReason}}
+      <div class="footnote">{{commaN .Reasons.WithoutReason}} failed sessions arrived with no reason code at all.</div>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="grid two-col mb">
+    <!-- T9 readiness -->
+    <div class="card">
+      <div class="section-head"><h2>MTA-STS mode <span class="subtle">{{metric "T9"}}</span></h2></div>
+      {{if .Readiness.Modes}}
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>Mode</th><th class="num">Sessions</th><th class="num">Share</th><th class="num">Failed</th></tr></thead>
+        <tbody>
+        {{range .Readiness.Modes}}
+        <tr>
+          <td class="mono-cell">{{.Mode}}</td>
+          <td class="num mono-cell">{{commaN .Sessions}}</td>
+          <td class="num mono-cell">{{pct1 .Share}}%</td>
+          <td class="num mono-cell">{{commaN .Failure}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table></div>
+      {{if .Readiness.TestingSessions}}
+      <div class="footnote">
+        Moving the policies now in <code>testing</code> to <code>enforce</code> would have made
+        <b>{{commaN .Readiness.WouldBlock}}</b> session{{if ne .Readiness.WouldBlock 1}}s{{end}} undeliverable over this
+        period, out of {{commaN .Readiness.TestingSessions}}.
+      </div>
+      {{end}}
+      {{else}}<div class="empty-state">No MTA-STS policy reported.</div>{{end}}
+    </div>
+
+    <!-- T10 + T11 -->
+    <div class="card">
+      <div class="section-head"><h2>Policy host and DANE <span class="subtle">{{metric "T10"}} · {{metric "T11"}}</span></h2></div>
+      <dl class="kv" style="grid-template-columns:1fr auto;">
+        <dt>Policy fetch errors</dt><dd>{{commaN .Endpoint.FetchError}}</dd>
+        <dt>WebPKI invalid</dt><dd>{{commaN .Endpoint.WebPKIInvalid}}</dd>
+        <dt>Policy invalid</dt><dd>{{commaN .Endpoint.PolicyInvalid}}</dd>
+      </dl>
+      <div class="footnote">These are about the <code>mta-sts.&lt;domain&gt;</code> HTTPS host and its policy file, not your MX.</div>
+      {{if .Dane}}
+      <div class="mt">
+        <div class="u-label mb">DANE / DNSSEC</div>
+        <div class="table-wrap"><table class="data">
+          <thead><tr><th>Result</th><th>Reported by</th><th>Host</th><th class="num">Sessions</th></tr></thead>
+          <tbody>
+          {{range .Dane}}
+          <tr>
+            <td class="mono-cell">{{.ResultType}}</td>
+            <td>{{.OrgName}}</td>
+            <td class="mono-cell subtle">{{.MXHostname}}</td>
+            <td class="num mono-cell">{{commaN .FailedSessions}}</td>
+          </tr>
+          {{end}}
+          </tbody>
+        </table></div>
+        <div class="footnote">Each <code>dane-required</code> is a named partner who has pinned mandatory DANE for you.</div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+
+  <!-- T15 incidents -->
+  {{if .Incidents}}
+  <div class="card mb">
+    <div class="section-head"><h2>Incidents <span class="subtle">{{metric "T15"}}</span></h2><span class="section-sub">consecutive days with the same failure on the same host</span></div>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Result type</th><th>MX host</th><th>First</th><th>Last</th><th class="num">Days</th><th class="num">Sessions</th></tr></thead>
+      <tbody>
+      {{range .Incidents}}
+      <tr>
+        <td class="mono-cell">{{.ResultType}}</td>
+        <td class="mono-cell">{{.MXHostname}}</td>
+        <td class="mono-cell subtle">{{.FirstDay}}</td>
+        <td class="mono-cell subtle">{{.LastDay}} {{if .Ongoing}}<span class="badge fail">ongoing</span>{{end}}</td>
+        <td class="num mono-cell">{{.Days}}</td>
+        <td class="num mono-cell">{{commaN .FailedSessions}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+  </div>
+  {{end}}
+
+  {{end}}{{/* end: sessions exist */}}
+
+  <div class="grid two-col mb">
+    <!-- T12 coverage -->
+    <div class="card">
+      <div class="section-head"><h2>Reporter coverage <span class="subtle">{{metric "T12"}}</span></h2></div>
+      <dl class="kv" style="grid-template-columns:1fr auto;">
+        <dt>Reporters in period</dt><dd>{{.Coverage.Reporters}}</dd>
+        <dt>New reporters</dt><dd>{{len .Coverage.New}}</dd>
+        <dt>Days with no report</dt><dd>{{.Coverage.DaysWithNoReport}}{{if .Coverage.WindowDays}} of {{.Coverage.WindowDays}}{{end}}</dd>
+        <dt>Arrival latency (median / p95)</dt><dd>{{if .Coverage.Latency.Samples}}{{pct1 .Coverage.Latency.MedianHours}}h / {{pct1 .Coverage.Latency.P95Hours}}h{{else}}—{{end}}</dd>
+      </dl>
+      {{if .Coverage.Lapsed}}
+      <div class="mt">
+        <div class="u-label mb">Went quiet</div>
+        {{range .Coverage.Lapsed}}
+        <div class="subtle">{{.OrgName}} — last window ended {{unixTime .LastEnd}}, {{.DaysSilent}}d ago</div>
+        {{end}}
+        <div class="footnote">A reporter going quiet is a finding: suppressing your <code>_smtp._tls</code> record also suppresses the reports.</div>
+      </div>
+      {{end}}
+      {{if .Volume.Reporters}}
+      <div class="table-wrap mt"><table class="data">
+        <thead><tr><th>Reporter</th><th class="num">Sessions</th><th class="num">Share</th><th class="num">Rate</th></tr></thead>
+        <tbody>
+        {{range .Volume.Reporters}}
+        <tr>
+          <td>{{.OrgName}}</td>
+          <td class="num mono-cell">{{commaN .Sessions}}</td>
+          <td class="num mono-cell">{{pct1 .Share}}%</td>
+          <td class="num mono-cell {{passClass .Rate}}">{{pct1 .Rate}}%</td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table></div>
+      {{end}}
+    </div>
+
+    <!-- T13 hygiene + T14 -->
+    <div class="card">
+      <div class="section-head"><h2>Hygiene <span class="subtle">{{metric "T13"}} · {{metric "T14"}}</span></h2></div>
+      <dl class="kv" style="grid-template-columns:1fr auto;">
+        <dt>Reports imported</dt><dd>{{commaN .Hygiene.Reports}}</dd>
+        <dt>Excluded: unsigned or unverifiable</dt><dd>{{commaN .Hygiene.Excluded}}</dd>
+        <dt>Duplicates</dt><dd>{{commaN .Hygiene.Duplicates}}</dd>
+        <dt>Report-ID reused for a different window</dt><dd>{{commaN .Hygiene.DuplicateRange}}</dd>
+        <dt>Parse errors</dt><dd>{{commaN .Hygiene.ParseErrors}}</dd>
+        <dt>Unattributed failures</dt><dd>{{commaN .Hygiene.UnattributedFailures}}</dd>
+        <dt>Multi-policy reports</dt><dd>{{commaN .Hygiene.MultiPolicyReports}}</dd>
+        <dt>Unregistered result types</dt><dd>{{commaN .Hygiene.UnknownResultTypes}}</dd>
+        <dt>Malformed IPs</dt><dd>{{commaN .Hygiene.MalformedIPs}}</dd>
+        <dt>Filename disagrees with body</dt><dd>{{commaN .Hygiene.RangeVariance}}</dd>
+        <dt>Odd / multi-day windows</dt><dd>{{commaN .Hygiene.NonDailyWindows}} / {{commaN .Hygiene.MultiDayWindows}}</dd>
+        <dt>Transport (mail / upload / unknown)</dt><dd>{{.Hygiene.TransportSMTP}} / {{.Hygiene.TransportUpload}} / {{.Hygiene.TransportBefore}}</dd>
+        <dt>Compressed / plain</dt><dd>{{.Hygiene.Compressed}} / {{.Hygiene.Plain}}</dd>
+      </dl>
+      {{if .Hygiene.DKIMByStatus}}
+      <div class="mt">
+        <div class="u-label mb">DKIM of mailed reports</div>
+        {{range .Hygiene.DKIMByStatus}}<span class="badge {{if eq .Status "valid"}}pass{{else}}fail{{end}}" style="margin-right:6px;">{{.Status}}: {{.Count}}</span>{{end}}
+        {{if not $.RequireDKIM}}<div class="footnote">TLSRPT_REQUIRE_DKIM is off, so none of these are excluded from the figures above.</div>{{end}}
+      </div>
+      {{end}}
+      <div class="mt">
+        <div class="u-label mb">Address family of failures {{metric "T14"}}</div>
+        <dl class="kv" style="grid-template-columns:1fr auto;">
+          <dt>Sending IPv4 / IPv6</dt><dd>{{commaN .Family.SendingV4}} / {{commaN .Family.SendingV6}}</dd>
+          <dt>Receiving IPv4 / IPv6</dt><dd>{{commaN .Family.ReceivingV4}} / {{commaN .Family.ReceivingV6}}</dd>
+        </dl>
+        <div class="footnote">
+          RFC 8460 puts addresses on failure rows only — a successful session carries none — so this is how
+          failures divide between the stacks, not a per-family success rate.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- T8 drift against the published policy -->
+  {{if .Drift}}
+  <div class="card mb">
+    <div class="section-head"><h2>Reported policy vs published <span class="subtle">{{metric "T8"}}</span></h2><span class="section-sub">from the Enrich snapshots</span></div>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Domain</th><th>What</th><th>Published now</th><th>Reported as applied</th><th>Reported by</th><th>Report window ended</th></tr></thead>
+      <tbody>
+      {{range .Drift}}
+      <tr>
+        <td class="mono-cell">{{.Domain}}</td>
+        <td><span class="badge warn">{{.Field}}</span></td>
+        <td class="mono-cell">{{.Published}}</td>
+        <td class="mono-cell">{{.Reported}}</td>
+        <td class="subtle">{{.OrgName}}</td>
+        <td class="mono-cell subtle">{{unixTime .LastReport}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    <div class="footnote">
+      Compared against the newest snapshot from <a href="/enrich">Enrich</a>. A difference can simply mean the
+      policy changed after that report's window — the window end is shown so you can tell. What it reliably
+      catches is a botched rollover, where senders are still applying records you no longer publish.
+    </div>
+  </div>
+  {{end}}
+
+  <!-- T8 divergence -->
+  {{if .Divergence}}
+  <div class="card mb">
+    <div class="section-head"><h2>Policy divergence <span class="subtle">{{metric "T8"}}</span></h2></div>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Day</th><th>Domain</th><th class="num">Distinct policies</th></tr></thead>
+      <tbody>
+      {{range .Divergence}}
+      <tr><td class="mono-cell">{{.Day}}</td><td>{{.PolicyDomain}}</td><td class="num mono-cell">{{.Distinct}}</td></tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    <div class="footnote">More than one policy seen for a domain on one day means a stale cache somewhere, or a divergent policy being served.</div>
+  </div>
+  {{end}}
+  {{end}}{{/* end with .T */}}
+
+  <!-- report list -->
+  <div class="card">
+    <div class="section-head">
+      <h2>Recent reports</h2>
+      <span class="section-sub"><a href="/reports/tlsrpt?period={{.SelectedPeriod}}">full report list →</a></span>
+    </div>
+    {{if .Reports}}
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Reporter</th><th>Domains</th><th>Window</th><th>DKIM</th><th class="num">OK</th><th class="num">Failed</th></tr></thead>
+      <tbody>
+      {{range .Reports}}
+      <tr>
+        <td><a href="/tlsrpt/{{.ID}}">{{.OrgName}}</a></td>
+        <td class="subtle">{{.PolicyDomains}}</td>
+        <td class="mono-cell subtle">{{unixTime .DateRangeBegin}} — {{unixTime .DateRangeEnd}}</td>
+        <td>
+          {{if eq .Transport "upload"}}<span class="badge neutral">uploaded</span>
+          {{else if eq .DKIMStatus "valid"}}<span class="badge pass">valid</span>
+          {{else}}<span class="badge fail">{{.DKIMStatus}}</span>{{end}}
+        </td>
+        <td class="num mono-cell">{{commaN .TotalSuccess}}</td>
+        <td class="num mono-cell">{{if .TotalFailure}}<b>{{commaN .TotalFailure}}</b>{{else}}0{{end}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    <div class="footnote">Per-report counts are the reporter's own sums, so a multi-policy report reads higher here than in the totals above.</div>
+    {{else}}
+    <div class="empty-state"><div class="glyph">◌</div>No TLS reports in this period.</div>
+    {{end}}
+  </div>
+
+</div>

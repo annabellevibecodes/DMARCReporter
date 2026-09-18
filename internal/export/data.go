@@ -2,6 +2,7 @@ package export
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
@@ -31,6 +32,18 @@ type ReportData struct {
 	ChangeLog      []database.PolicyChange       // P3 (per-domain report)
 	NewSources     []database.SourceInventoryRow // S2 top 10
 	OpenAlerts     []database.Alert
+
+	// SMTP TLS reporting (RFC 8460). TLSRate is nil when the period holds no
+	// TLS sessions, which the renderers show as "no reports" rather than as
+	// a zero rate — the same distinction the health score draws.
+	TLSRate      *database.TLSRate
+	TLSPrevRate  *database.TLSRate
+	TLSPolicyMix *database.TLSPolicyMix
+	TLSFailures  *database.TLSFailureBreakdown
+	TLSReceivers *database.TLSReceivers
+	TLSReadiness *database.TLSEnforcementReadiness
+	TLSHygiene   *database.TLSHygiene
+	TLSAlerts    []database.Alert // open alerts raised by the TLS rules
 }
 
 // DomainPolicy is one domain's dominant effective policy for the all-domains report.
@@ -51,12 +64,18 @@ type Summary struct {
 // Options tunes the analytics sections.
 type Options struct {
 	PatternThresholds ipinfo.PatternThresholds
+	// TLSRequireDKIM mirrors TLSRPT_REQUIRE_DKIM so the exported TLS figures
+	// match the ones on screen. Fetch defaults it to true, as the setting does.
+	TLSRequireDKIM bool
 }
 
 // Fetch loads report data from the database, scoped to the same period and
 // domain filters the UI uses so the exported report matches what is on screen.
 func Fetch(db *sqlx.DB, domain string, from, to int64, periodLabel string) (*ReportData, error) {
-	return FetchWithOptions(db, domain, from, to, periodLabel, Options{PatternThresholds: ipinfo.DefaultPatternThresholds})
+	return FetchWithOptions(db, domain, from, to, periodLabel, Options{
+		PatternThresholds: ipinfo.DefaultPatternThresholds,
+		TLSRequireDKIM:    true,
+	})
 }
 
 // FetchWithOptions is Fetch with explicit analytics options.
@@ -136,7 +155,164 @@ func FetchWithOptions(db *sqlx.DB, domain string, from, to int64, periodLabel st
 	if rd.OpenAlerts, err = database.ListAlerts(db, "open", domain, 50); err != nil {
 		return nil, err
 	}
+	for _, al := range rd.OpenAlerts {
+		if strings.HasPrefix(al.Rule, "tls_") {
+			rd.TLSAlerts = append(rd.TLSAlerts, al)
+		}
+	}
+
+	if err := fetchTLS(db, rd, domain, from, to, opt.TLSRequireDKIM); err != nil {
+		return nil, err
+	}
 	return rd, nil
+}
+
+// fetchTLS loads the TLS section. A period with no TLS sessions leaves
+// TLSRate nil, and every renderer then says so instead of printing zeros
+// that would read as "all sessions failed".
+func fetchTLS(db *sqlx.DB, rd *ReportData, domain string, from, to int64, requireDKIM bool) error {
+	tf := database.TLSFilter{Domain: domain, From: from, To: to, RequireDKIM: requireDKIM}
+
+	rate, err := database.GetTLSRate(db, tf)
+	if err != nil {
+		return err
+	}
+	if rate.Total == 0 {
+		return nil
+	}
+	rd.TLSRate = rate
+
+	if prev, ok := tf.PreviousWindow(); ok {
+		prevRate, err := database.GetTLSRate(db, prev)
+		if err != nil {
+			return err
+		}
+		if prevRate.Total > 0 {
+			rd.TLSPrevRate = prevRate
+		}
+	}
+	if rd.TLSPolicyMix, err = database.GetTLSPolicyMix(db, tf); err != nil {
+		return err
+	}
+	if rd.TLSFailures, err = database.GetTLSFailureBreakdown(db, tf); err != nil {
+		return err
+	}
+	if rd.TLSReceivers, err = database.GetTLSReceivers(db, tf, 10); err != nil {
+		return err
+	}
+	if rd.TLSReadiness, err = database.GetTLSEnforcementReadiness(db, tf); err != nil {
+		return err
+	}
+	if rd.TLSHygiene, err = database.GetTLSHygiene(db, tf); err != nil {
+		return err
+	}
+	return nil
+}
+
+// TLSDelta returns the change in TLS success rate against the preceding
+// window, and whether there was one to compare against.
+func (rd *ReportData) TLSDelta() (float64, bool) {
+	if rd.TLSRate == nil || rd.TLSPrevRate == nil {
+		return 0, false
+	}
+	return rd.TLSRate.Rate - rd.TLSPrevRate.Rate, true
+}
+
+// tlsSummaryKV renders the TLS headline as label/value rows (T1, T9, T13).
+func tlsSummaryKV(rd *ReportData) [][2]string {
+	if rd.TLSRate == nil {
+		return nil
+	}
+	rows := [][2]string{
+		{"TLS success rate (T1)", fmt.Sprintf("%.1f%%", rd.TLSRate.Rate)},
+		{"Sessions", fmt.Sprintf("%d (%d successful, %d failed)", rd.TLSRate.Total, rd.TLSRate.Success, rd.TLSRate.Failure)},
+	}
+	if delta, ok := rd.TLSDelta(); ok {
+		rows = append(rows, [2]string{"Change vs previous period",
+			fmt.Sprintf("%+.1f points (was %.1f%%)", delta, rd.TLSPrevRate.Rate)})
+	}
+	if r := rd.TLSReadiness; r != nil && r.TestingSessions > 0 {
+		rows = append(rows, [2]string{"MTA-STS enforcement readiness (T9)",
+			fmt.Sprintf("%d session(s) would have been blocked in enforce, of %d in testing",
+				r.WouldBlock, r.TestingSessions)})
+	}
+	if h := rd.TLSHygiene; h != nil && h.Excluded > 0 {
+		rows = append(rows, [2]string{"Reports excluded (unsigned, RFC 8460 §3)",
+			fmt.Sprintf("%d", h.Excluded)})
+	}
+	return rows
+}
+
+// Column headers for the TLS tables, shared by every format.
+var (
+	tlsPolicyHeaders   = []string{"Policy Type", "Sessions", "Share"}
+	tlsFailureHeaders  = []string{"Result Type", "Group", "Sessions", "Share"}
+	tlsReceiverHeaders = []string{"MX Host", "Nodes", "Failed Sessions", "Result Types"}
+	tlsAlertHeaders    = []string{"Rule", "Severity", "Domain", "Message"}
+)
+
+// tlsPolicyRows renders the policy-type mix (T3).
+func tlsPolicyRows(rd *ReportData) [][]string {
+	if rd.TLSPolicyMix == nil {
+		return nil
+	}
+	rows := make([][]string, 0, len(rd.TLSPolicyMix.Overall))
+	for _, p := range rd.TLSPolicyMix.Overall {
+		rows = append(rows, []string{
+			escapeFormula(p.PolicyType),
+			fmt.Sprintf("%d", p.Sessions),
+			fmt.Sprintf("%.1f%%", p.Share),
+		})
+	}
+	return rows
+}
+
+// tlsFailureRows renders failures by result type (T4).
+func tlsFailureRows(rd *ReportData) [][]string {
+	if rd.TLSFailures == nil {
+		return nil
+	}
+	rows := make([][]string, 0, len(rd.TLSFailures.Types))
+	for _, f := range rd.TLSFailures.Types {
+		rows = append(rows, []string{
+			escapeFormula(f.ResultType),
+			escapeFormula(f.Group),
+			fmt.Sprintf("%d", f.FailedSessions),
+			fmt.Sprintf("%.1f%%", f.Share),
+		})
+	}
+	return rows
+}
+
+// tlsReceiverRows renders the top failing receivers (T5).
+func tlsReceiverRows(rd *ReportData) [][]string {
+	if rd.TLSReceivers == nil {
+		return nil
+	}
+	rows := make([][]string, 0, len(rd.TLSReceivers.ByHost))
+	for _, r := range rd.TLSReceivers.ByHost {
+		rows = append(rows, []string{
+			escapeFormula(r.MXHostname),
+			fmt.Sprintf("%d", r.DistinctIPs),
+			fmt.Sprintf("%d", r.FailedSessions),
+			escapeFormula(r.ResultTypes),
+		})
+	}
+	return rows
+}
+
+// tlsAlertRows renders the open TLS alerts.
+func tlsAlertRows(rd *ReportData) [][]string {
+	rows := make([][]string, 0, len(rd.TLSAlerts))
+	for _, al := range rd.TLSAlerts {
+		rows = append(rows, []string{
+			escapeFormula(al.Rule),
+			escapeFormula(al.Severity),
+			escapeFormula(al.Domain),
+			escapeFormula(al.Message),
+		})
+	}
+	return rows
 }
 
 // analyticsKV renders the matrix and enforcement blocks as label/value rows,

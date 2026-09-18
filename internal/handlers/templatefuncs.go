@@ -14,7 +14,14 @@ import (
 // TemplateFuncs returns the helper functions shared by every template.
 func TemplateFuncs() template.FuncMap {
 	return template.FuncMap{
-		"add": func(a, b int) int { return a + b },
+		"add":   func(a, b int) int { return a + b },
+		"add64": func(a, b int64) int64 { return a + b },
+		"div": func(a, b int64) int64 {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
 		"unixTime": func(ts int64) string {
 			return time.Unix(ts, 0).UTC().Format("2006-01-02")
 		},
@@ -103,6 +110,30 @@ func TemplateFuncs() template.FuncMap {
 				s[i] = i
 			}
 			return s
+		},
+		// Column sorting: the link flips direction when the column is already
+		// the sorted one, so a second click reverses rather than doing nothing.
+		"sortHref": func(path string, base template.URL, key, curSort, curDir string) template.URL {
+			dir := "desc"
+			if key == curSort && curDir == "desc" {
+				dir = "asc"
+			}
+			return template.URL(fmt.Sprintf("%s?%s&sort=%s&dir=%s", path, base, key, dir))
+		},
+		"sortMark": func(key, curSort, curDir string) string {
+			if key != curSort {
+				return ""
+			}
+			if curDir == "asc" {
+				return " ▲"
+			}
+			return " ▼"
+		},
+		"sortClass": func(key, curSort string) string {
+			if key == curSort {
+				return "sorted"
+			}
+			return ""
 		},
 		"lower":     strings.ToLower,
 		"hasPrefix": strings.HasPrefix,

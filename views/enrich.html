@@ -68,7 +68,9 @@
      data-domain-done="{{.EnrichDomainDone}}"
      data-domain-total="{{.EnrichDomainTotal}}"
      data-spf-done="{{.EnrichSPFDone}}"
-     data-spf-total="{{.EnrichSPFTotal}}">
+     data-spf-total="{{.EnrichSPFTotal}}"
+     data-tls-done="{{.EnrichTLSDone}}"
+     data-tls-total="{{.EnrichTLSTotal}}">
   <article>
     <header>
       <span id="progress-title">Running&hellip;</span>
@@ -103,6 +105,16 @@
       </div>
       <progress id="spf-bar" value="0" max="1" style="width:100%;margin-bottom:8px;"></progress>
       <div id="spf-log" style="max-height:200px;overflow-y:auto;font-family:monospace;font-size:12px;background:var(--pico-code-background,#f4f4f4);padding:8px;border-radius:4px;"></div>
+    </div>
+
+    <!-- Published TLS records progress -->
+    <div id="tls-section" style="display:none;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+        <strong>Published TLS records</strong>
+        <span id="tls-counter" style="font-size:0.85rem;color:var(--pico-muted-color);"></span>
+      </div>
+      <progress id="tls-bar" value="0" max="1" style="width:100%;margin-bottom:8px;"></progress>
+      <div id="tls-log" style="max-height:200px;overflow-y:auto;font-family:monospace;font-size:12px;background:var(--pico-code-background,#f4f4f4);padding:8px;border-radius:4px;"></div>
     </div>
 
     <!-- Done banner -->

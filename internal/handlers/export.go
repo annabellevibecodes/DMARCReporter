@@ -31,7 +31,10 @@ func (a *App) HandleExport(c *fiber.Ctx) error {
 	}
 
 	from, to, periodLabel := parsePeriod(period)
-	rd, err := export.FetchWithOptions(a.DB, domain, from, to, periodLabel, export.Options{PatternThresholds: a.patternThresholds()})
+	rd, err := export.FetchWithOptions(a.DB, domain, from, to, periodLabel, export.Options{
+		PatternThresholds: a.patternThresholds(),
+		TLSRequireDKIM:    a.Cfg.TLSRPTRequireDKIM,
+	})
 	if err != nil {
 		return err
 	}

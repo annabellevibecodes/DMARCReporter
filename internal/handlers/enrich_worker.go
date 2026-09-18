@@ -13,6 +13,7 @@ import (
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
 	"github.com/annabellevibecodes/dmarcreporter/internal/ipinfo"
 	"github.com/annabellevibecodes/dmarcreporter/internal/spf"
+	"github.com/annabellevibecodes/dmarcreporter/internal/tlspolicy"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -25,11 +26,18 @@ type EnrichStatus struct {
 	DomainDone  int    `json:"domain_done"`
 	SPFTotal    int    `json:"spf_total"`
 	SPFDone     int    `json:"spf_done"`
+	TLSTotal    int    `json:"tls_total"`
+	TLSDone     int    `json:"tls_done"`
 	Error       string `json:"error,omitempty"`
 }
 
 // spfCacheTTL is how long a resolved SPF expansion stays fresh.
 const spfCacheTTL = 24 * time.Hour
+
+// tlsPolicyTTL is how long a published-TLS-record snapshot stays fresh. A
+// constant rather than an environment variable, matching spfCacheTTL: the
+// records change rarely and the job is cheap.
+const tlsPolicyTTL = 24 * time.Hour
 
 // enrichEvent is one item pushed to SSE subscribers.
 type enrichEvent struct {
@@ -115,13 +123,16 @@ func (w *EnrichWorker) finish(ips, domains, spfDomains int, errMsg string) {
 	w.mu.Lock()
 	w.status.Running = false
 	w.status.Error = errMsg
+	// Read from the status rather than taking another parameter: the TLS job
+	// is the last to run and may not have started when an earlier one failed.
+	tlsDomains := w.status.TLSDone
 	w.mu.Unlock()
 
 	if errMsg != "" {
 		w.publish("error", map[string]string{"message": errMsg})
 		return
 	}
-	w.publish("done", map[string]any{"ips": ips, "domains": domains, "spf": spfDomains})
+	w.publish("done", map[string]any{"ips": ips, "domains": domains, "spf": spfDomains, "tls": tlsDomains})
 }
 
 func (w *EnrichWorker) run() {
@@ -227,7 +238,102 @@ func (w *EnrichWorker) run() {
 		})
 	}
 
+	// Fourth job: snapshot what each domain publishes for transport security
+	// — its TLS-RPT record, its MTA-STS policy and the TLSA records of its MX
+	// hosts — so T8 can compare that against what reporters said they applied.
+	tlsDomains, err := database.ListStaleTLSPolicyDomains(w.db, now.Add(-tlsPolicyTTL).Unix())
+	if err != nil {
+		w.finish(len(ips), len(toCheck), len(spfDomains), err.Error())
+		return
+	}
+	w.mu.Lock()
+	w.status.TLSTotal = len(tlsDomains)
+	w.mu.Unlock()
+	w.publish("", map[string]any{"type": "tls_start", "total": len(tlsDomains)})
+
+	for i, domain := range tlsDomains {
+		summary, changes := w.snapshotTLSPolicy(domain)
+		w.mu.Lock()
+		w.status.TLSDone = i + 1
+		w.mu.Unlock()
+		w.publish("", map[string]any{
+			"type": "tls", "domain": domain, "summary": summary, "changed": changes,
+			"done": i + 1, "total": len(tlsDomains),
+		})
+	}
+
 	w.finish(len(ips), len(toCheck), len(spfDomains), "")
+}
+
+// snapshotTLSPolicy records the TLS-RPT record, MTA-STS policy and per-MX
+// TLSA RRsets of one domain, returning a one-line summary for the log and how
+// many records changed since the last run.
+func (w *EnrichWorker) snapshotTLSPolicy(domain string) (summary string, changes int) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	client := &tlspolicy.Client{}
+	var parts []string
+
+	rec := client.LookupTLSRPT(ctx, domain)
+	detail, _ := json.Marshal(rec)
+	if changed := w.saveSnapshot(domain, database.TLSSnapshotTLSRPT, "", rec.Raw, string(detail), rec.Error); changed {
+		changes++
+	}
+	switch {
+	case rec.Found:
+		parts = append(parts, fmt.Sprintf("TLS-RPT → %s", strings.Join(rec.RUA, ", ")))
+	case rec.Candidates > 1:
+		parts = append(parts, fmt.Sprintf("TLS-RPT: %d records (must be 1)", rec.Candidates))
+	default:
+		parts = append(parts, "no TLS-RPT record")
+	}
+
+	policy := client.LookupMTASTS(ctx, domain)
+	detail, _ = json.Marshal(policy)
+	if changed := w.saveSnapshot(domain, database.TLSSnapshotMTASTS, "", policy.Raw, string(detail), policy.FetchError); changed {
+		changes++
+	}
+	switch {
+	case policy.PolicyFound:
+		parts = append(parts, fmt.Sprintf("MTA-STS %s (%d mx)", policy.Mode, len(policy.MX)))
+	case policy.DNSFound:
+		parts = append(parts, "MTA-STS record but no usable policy")
+	default:
+		parts = append(parts, "no MTA-STS")
+	}
+
+	results, err := client.LookupTLSAForDomain(ctx, domain)
+	if err != nil {
+		parts = append(parts, "TLSA: "+err.Error())
+		return strings.Join(parts, " · "), changes
+	}
+	withRecords := 0
+	for _, res := range results {
+		detail, _ = json.Marshal(res)
+		if changed := w.saveSnapshot(domain, database.TLSSnapshotTLSA, res.Host, res.Presentation(), string(detail), res.Error); changed {
+			changes++
+		}
+		if len(res.Records) > 0 {
+			withRecords++
+		}
+	}
+	parts = append(parts, fmt.Sprintf("TLSA on %d of %d MX", withRecords, len(results)))
+	return strings.Join(parts, " · "), changes
+}
+
+// saveSnapshot stores one observation, logging rather than failing the run:
+// a snapshot that cannot be written must not lose the rest of the job.
+func (w *EnrichWorker) saveSnapshot(domain, kind, host, content, detail, errMsg string) bool {
+	changed, err := database.UpsertTLSSnapshot(w.db, database.TLSSnapshot{
+		Domain: domain, Kind: kind, Host: host,
+		Content: content, Detail: detail, Error: errMsg,
+	})
+	if err != nil {
+		log.Printf("enrich: tls snapshot %s/%s/%s: %v", domain, kind, host, err)
+		return false
+	}
+	return changed
 }
 
 // resolveSPFEntry expands one domain's SPF record into a cache row.

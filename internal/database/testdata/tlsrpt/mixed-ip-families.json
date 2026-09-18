@@ -1,0 +1,40 @@
+{
+  "organization-name": "Reporter-I",
+  "date-range": {
+    "start-datetime": "2026-09-08T00:00:00Z",
+    "end-datetime": "2026-09-08T23:59:59Z"
+  },
+  "contact-info": "tlsrpt@reporter-i.example",
+  "report-id": "ipmix-1",
+  "policies": [{
+    "policy": {
+      "policy-type": "sts",
+      "policy-string": ["version: STSv1","mode: enforce","mx: mx.example.com","max_age: 604800"],
+      "policy-domain": "example.com",
+      "mx-host": ["mx.example.com"]
+    },
+    "summary": {
+      "total-successful-session-count": 30,
+      "total-failure-session-count": 9
+    },
+    "failure-details": [{
+      "result-type": "certificate-expired",
+      "sending-mta-ip": "2001:db8:0:0:0:0:0:1",
+      "receiving-mx-hostname": "mx.example.com",
+      "receiving-ip": "2001:DB8::25",
+      "failed-session-count": 3
+    }, {
+      "result-type": "certificate-expired",
+      "sending-mta-ip": "2001:db8::1",
+      "receiving-mx-hostname": "mx.example.com",
+      "receiving-ip": "2001:db8:0000:0000:0000:0000:0000:0025",
+      "failed-session-count": 3
+    }, {
+      "result-type": "certificate-expired",
+      "sending-mta-ip": "not-an-ip-address",
+      "receiving-mx-hostname": "mx.example.com",
+      "receiving-ip": "999.999.999.999",
+      "failed-session-count": 3
+    }]
+  }]
+}

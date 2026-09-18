@@ -31,6 +31,14 @@
       <tr><td>X9 <code>dns_error_spike</code></td><td>A reporter logged DNS temp/perm errors on many raw results</td><td><code>ALERT_DNS_ERROR_PCT</code> (5)</td></tr>
       <tr><td>X10 <code>override_spike</code></td><td>Policy-override volume jumped versus its 7-day daily mean</td><td><code>ALERT_OVERRIDE_SPIKE_FACTOR</code> (3×)</td></tr>
       <tr><td>X11 <code>spoof_spike</code></td><td>Unauthenticated mail from IPs outside the domain's SPF record spiked</td><td><code>ALERT_SPOOF_SPIKE_FACTOR</code> (3×) or <code>ALERT_SPOOF_ABS</code> (50)</td></tr>
+      <tr><td>X12 <code>tls_rate_drop</code></td><td>A domain's 7-day TLS success rate fell week-over-week</td><td><code>ALERT_TLS_RATE_DROP</code> points (5.0), <code>ALERT_TLS_MIN_WINDOW_SESSIONS</code> (100)</td></tr>
+      <tr><td>X13 <code>tls_starttls_stripped</code></td><td>A reporter that used to negotiate TLS with an MX host now says STARTTLS was not offered</td><td><code>ALERT_TLS_STRIP_MIN_SESSIONS</code> (5)</td></tr>
+      <tr><td>X14 <code>tls_cert_expired</code></td><td>A reporter saw an expired certificate on one of your MX hosts</td><td>any occurrence</td></tr>
+      <tr><td>X15 <code>tls_policy_inconsistent</code></td><td>Two or more policies seen for one domain on one day, or drift against what you publish</td><td>any occurrence</td></tr>
+      <tr><td>X16 <code>tls_policy_host_error</code></td><td>Senders could not fetch or validate your MTA-STS policy file</td><td><code>ALERT_TLS_POLICY_HOST_ERR_PCT</code> (5%)</td></tr>
+      <tr><td>X17 <code>tls_dane_invalid</code></td><td>A reporter could not validate your DANE records</td><td>any occurrence</td></tr>
+      <tr><td>X18 <code>tls_reporter_silent</code></td><td>A TLS reporter active in the last 14 days stopped sending</td><td><code>ALERT_TLS_REPORTER_GAP_DAYS</code> (3)</td></tr>
+      <tr><td>X19 <code>tls_new_failing_receiver</code></td><td>A receiving node started failing under an MX host whose other nodes are fine</td><td><code>ALERT_TLS_NEW_FAILING_IP_MIN</code> (10)</td></tr>
     </tbody>
   </table>
   <p>
@@ -43,12 +51,19 @@
     X7 and X8 the policy change log and consistency check from P3 and P2, X9 the DNS error rate
     from A8, and X11 the spoof volume from S4. Looking up the metric explains what the alert saw.
   </p>
+  <p>
+    X12–X19 do the same for SMTP TLS reporting: X12 watches the success rate from T1, X13–X14 and
+    X17 the result types from T4, X15 the policy divergence and drift from T8, X16 the policy-host
+    errors from T10, X18 the reporter coverage from T12, and X19 the per-node failures from T5.
+    A report excluded by the RFC 8460 §3 signature requirement raises no alert either, so what
+    you see on <a href="/tlsrpt">the TLS page</a> and what alerts fire always agree.
+  </p>
 </article>
 
 <!-- Health -->
 <article class="help-chapter" id="health">
   <header><h2>Health Score</h2></header>
-  <p>The score (0–100) on the dashboard and domain pages adds five components, each capped at its
+  <p>The score on the dashboard and domain pages adds six components, each capped at its
   weight (<code>HEALTH_W_*</code>):</p>
   <table>
     <thead><tr><th>Component</th><th>Formula</th><th>Weight</th></tr></thead>
@@ -58,7 +73,22 @@
       <tr><td>Spoof share</td><td>(100 − spoof share) × weight / 100 — spoof share is the not-in-SPF volume when resolved, otherwise the "neither" share</td><td>15</td></tr>
       <tr><td>Reporter coverage</td><td>≥3 distinct reporters in the last 7 days → full, 2 → half, else 0</td><td>10</td></tr>
       <tr><td>Alerts</td><td>No open <em>critical</em> alert → full</td><td>10</td></tr>
+      <tr><td>Transport security</td><td>TLS success rate (<a href="/help/metrics#tls">T1</a>) for 70% of the weight, plus TLS reporter coverage (<a href="/help/metrics#tls">T12</a>) for the rest: ≥2 reporters → full, 1 → half</td><td>15</td></tr>
     </tbody>
   </table>
-  <p>Labels: ≥85 Excellent, ≥65 Good, ≥40 Fair, otherwise Critical.</p>
+  <p>
+    <strong>A domain with no TLS reports is not marked down for it.</strong> When there are no TLS
+    sessions to judge, the transport-security component is left out of the maximum as well as the
+    total, so the score means exactly what it did before the component existed. Absence of evidence
+    and evidence of breakage are different states: a domain nobody reports on keeps its DMARC score
+    out of 100, while a domain whose TLS is actually failing loses points out of 115. The score is
+    shown as a value out of its own maximum for that reason.
+  </p>
+  <p>
+    TLS reports excluded by the RFC 8460 §3 signature requirement do not count toward the
+    component, the same as everywhere else. A domain whose only TLS reports arrive unsigned
+    therefore scores as "no data" rather than as a failure — <a href="/tlsrpt">the TLS page</a>
+    says how many were held back.
+  </p>
+  <p>Labels: ≥85% Excellent, ≥65% Good, ≥40% Fair, otherwise Critical — as a share of the maximum in play.</p>
 </article>

@@ -239,6 +239,8 @@ func extractAttachments(raw []byte) ([]Attachment, error) {
 			Filename:   p.Filename,
 			Data:       p.Data,
 			ReceivedAt: p.ReceivedAt,
+			// The whole message, for the RFC 8460 §3 DKIM check on TLS reports.
+			RawMessage: raw,
 		})
 	}
 	return attachments, nil

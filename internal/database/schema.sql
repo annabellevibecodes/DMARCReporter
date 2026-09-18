@@ -181,10 +181,90 @@ CREATE TABLE IF NOT EXISTS tlsrpt_reports (
     raw_json         TEXT    NOT NULL DEFAULT '',
     imported_at      INTEGER NOT NULL DEFAULT (unixepoch()),
     source_filename  TEXT    NOT NULL DEFAULT '',
+    -- Columns below were added by the TLS-RPT analytics extension. They are
+    -- also listed in db.go (tlsrptReportColumns) so existing databases gain
+    -- them via ALTER TABLE on startup.
+    received_at           INTEGER NOT NULL DEFAULT 0,  -- mail Date header; 0 for bare uploads
+    submitter_domain      TEXT    NOT NULL DEFAULT '', -- TLS-Report-Submitter header
+    report_domain         TEXT    NOT NULL DEFAULT '', -- TLS-Report-Domain header
+    transport             TEXT    NOT NULL DEFAULT '', -- smtp | upload ('' = imported before this column)
+    dkim_status           TEXT    NOT NULL DEFAULT 'unknown',
+    dkim_domain           TEXT    NOT NULL DEFAULT '',
+    dkim_selector         TEXT    NOT NULL DEFAULT '',
+    dkim_stype_tlsrpt     INTEGER NOT NULL DEFAULT 0,  -- key record carries an explicit s=tlsrpt
+    dkim_matches_contact  INTEGER NOT NULL DEFAULT 0,  -- d= covers the contact-info domain
+    dkim_detail           TEXT    NOT NULL DEFAULT '', -- why an invalid/unknown status was reached
+    -- Hygiene counters (T13). Derived at import, kept on the row so the
+    -- hygiene panel does not have to re-walk every child table.
+    multi_policy          INTEGER NOT NULL DEFAULT 0,  -- ≥2 policy entries share a domain + mx pattern (I2)
+    unattributed_failures INTEGER NOT NULL DEFAULT 0,  -- Σ over policies of summary − Σ detail (I3)
+    malformed_ips         INTEGER NOT NULL DEFAULT 0,  -- detail rows whose IP did not parse
+    unknown_result_types  INTEGER NOT NULL DEFAULT 0,  -- result types outside the IANA registry
+    range_variance        INTEGER NOT NULL DEFAULT 0,  -- filename range disagrees with the body (I4)
     UNIQUE (org_name, report_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_tlsrpt_date_begin ON tlsrpt_reports(date_range_begin);
+
+-- One row per entry of a report's `policies` array, stored exactly as the
+-- reporter sent it. Two entries may describe the same sessions (an MTA-STS
+-- policy and a TLSA record for one domain); collapsing them is a query-time
+-- rollup (TLSSessionTotals), never a write-time edit, because the RFC never
+-- states that the populations overlap and the raw values must stay recoverable.
+CREATE TABLE IF NOT EXISTS tlsrpt_policies (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    tlsrpt_report_id      INTEGER NOT NULL REFERENCES tlsrpt_reports(id) ON DELETE CASCADE,
+    policy_index          INTEGER NOT NULL DEFAULT 0,   -- position in the array, preserved
+    policy_type           TEXT    NOT NULL DEFAULT '',  -- sts | tlsa | no-policy-found | verbatim other
+    policy_domain         TEXT    NOT NULL DEFAULT '',
+    mx_host_pattern       TEXT    NOT NULL DEFAULT '',  -- sorted, comma-joined mx-host list: the I2 group key
+    policy_string         TEXT    NOT NULL DEFAULT '[]',-- the array verbatim, as JSON text
+    success_count         INTEGER NOT NULL DEFAULT 0,
+    failure_count         INTEGER NOT NULL DEFAULT 0,
+    unattributed_failures INTEGER NOT NULL DEFAULT 0,   -- failure_count − Σ failed_session_count, floored (I3)
+    sts_version           TEXT    NOT NULL DEFAULT '',  -- parsed from policy_string when policy_type = 'sts'
+    sts_mode              TEXT    NOT NULL DEFAULT '',
+    sts_max_age           INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_tlsrpt_policies_report ON tlsrpt_policies(tlsrpt_report_id);
+CREATE INDEX IF NOT EXISTS idx_tlsrpt_policies_domain ON tlsrpt_policies(policy_domain);
+CREATE INDEX IF NOT EXISTS idx_tlsrpt_policies_type   ON tlsrpt_policies(policy_type);
+
+-- The mx-host patterns of a policy, one per row. RFC 8461 §4.1 makes these
+-- wildcard patterns, not hostnames: never equality-join mx_pattern to a
+-- reported receiving_mx_hostname (I6).
+CREATE TABLE IF NOT EXISTS tlsrpt_policy_mx (
+    policy_id  INTEGER NOT NULL REFERENCES tlsrpt_policies(id) ON DELETE CASCADE,
+    mx_index   INTEGER NOT NULL DEFAULT 0,
+    mx_pattern TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_tlsrpt_policy_mx_policy ON tlsrpt_policy_mx(policy_id);
+
+-- One row per `failure-details` entry. Result types are explicitly
+-- non-exclusive: one session hitting several errors appears several times, so
+-- failure totals never come from SUM(failed_session_count) (I1).
+-- sending_mta_ip and receiving_ip are NULL when the reporter sent something
+-- that is not an IP; every other optional field is '' when unspecified.
+CREATE TABLE IF NOT EXISTS tlsrpt_failures (
+    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    policy_id              INTEGER NOT NULL REFERENCES tlsrpt_policies(id) ON DELETE CASCADE,
+    result_type            TEXT    NOT NULL DEFAULT '',  -- stored verbatim, registry or not
+    sending_mta_ip         TEXT,                         -- canonicalised; NULL when unparseable
+    receiving_mx_hostname  TEXT    NOT NULL DEFAULT '',
+    receiving_mx_helo      TEXT    NOT NULL DEFAULT '',
+    receiving_ip           TEXT,                         -- canonicalised; NULL when unparseable
+    failed_session_count   INTEGER NOT NULL DEFAULT 0,
+    additional_information TEXT    NOT NULL DEFAULT '',
+    failure_reason_code    TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_tlsrpt_failures_policy      ON tlsrpt_failures(policy_id);
+CREATE INDEX IF NOT EXISTS idx_tlsrpt_failures_result      ON tlsrpt_failures(result_type);
+CREATE INDEX IF NOT EXISTS idx_tlsrpt_failures_mx_hostname ON tlsrpt_failures(receiving_mx_hostname);
+CREATE INDEX IF NOT EXISTS idx_tlsrpt_failures_receiving   ON tlsrpt_failures(receiving_ip);
+CREATE INDEX IF NOT EXISTS idx_tlsrpt_failures_sending     ON tlsrpt_failures(sending_mta_ip);
 
 -- Alert deduplication: one row per alert already delivered.
 CREATE TABLE IF NOT EXISTS alerts_sent (
@@ -268,3 +348,26 @@ CREATE TABLE IF NOT EXISTS spf_authorized_cache (
     error      TEXT    NOT NULL DEFAULT '',
     checked_at INTEGER NOT NULL DEFAULT 0
 );
+
+-- Observed states of the TLS records a domain publishes: its TLS-RPT record,
+-- its MTA-STS policy, and the TLSA RRset of each MX host.
+--
+-- One row per distinct state, not per check: re-observing the same content
+-- bumps last_seen and checks, and a change inserts a new row. The table is
+-- therefore a change log by construction, which is what T8 drift detection
+-- and the change-log view need, without a row per Enrich run.
+CREATE TABLE IF NOT EXISTS tls_snapshots (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain     TEXT    NOT NULL,
+    kind       TEXT    NOT NULL,              -- tlsrpt | mta_sts | tlsa
+    host       TEXT    NOT NULL DEFAULT '',   -- MX host for tlsa; '' otherwise
+    content    TEXT    NOT NULL DEFAULT '',   -- the text that is diffed
+    detail     TEXT    NOT NULL DEFAULT '{}', -- JSON of the parsed fields
+    error      TEXT    NOT NULL DEFAULT '',
+    first_seen INTEGER NOT NULL,
+    last_seen  INTEGER NOT NULL,
+    checks     INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_tls_snapshots_lookup ON tls_snapshots(domain, kind, host, last_seen);
+CREATE INDEX IF NOT EXISTS idx_tls_snapshots_kind   ON tls_snapshots(kind, last_seen);

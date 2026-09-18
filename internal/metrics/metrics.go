@@ -34,6 +34,7 @@ const (
 	hrefAuth       = "/help/metrics#auth"
 	hrefPolicy     = "/help/metrics#policy"
 	hrefReporters  = "/help/metrics#reporters"
+	hrefTLS        = "/help/metrics#tls"
 	hrefAlerts     = "/help/alerts#alerts"
 )
 
@@ -44,7 +45,8 @@ var Families = []Family{
 	{"A", "Authentication (A1–A8)", "The raw DKIM and SPF detail behind the pass or fail verdict.", hrefAuth},
 	{"P", "Policy (P1–P6)", "Your published DMARC record as reporters actually saw it.", hrefPolicy},
 	{"R", "Reporters (R1–R8)", "Who sends you reports, how promptly, and report hygiene.", hrefReporters},
-	{"X", "Alerts (X1–X11)", "The rules that raise alerts when a metric crosses its threshold.", hrefAlerts},
+	{"T", "TLS (T1–T15)", "SMTP TLS reporting: session success, policies applied, and why connections failed.", hrefTLS},
+	{"X", "Alerts (X1–X19)", "The rules that raise alerts when a metric crosses its threshold.", hrefAlerts},
 }
 
 // All is every identifier, keyed by ID.
@@ -95,6 +97,23 @@ var All = map[string]Metric{
 	"R7": {"R7", "Unmanaged domains", "Policy domains appearing in reports that are not on your managed-domains list.", hrefReporters},
 	"R8": {"R8", "Recipient domains", "The receiving domains your mail reached, with the pass rate at each.", hrefReporters},
 
+	// TLS reporting (RFC 8460).
+	"T1":  {"T1", "TLS success rate", "Share of reported sessions that negotiated TLS successfully, overall, per day and per domain.", hrefTLS},
+	"T2":  {"T2", "Volume and reporter share", "Sessions per day and per reporter, with both the session-weighted rate and the per-reporter median.", hrefTLS},
+	"T3":  {"T3", "Policy-type mix", "Share of sessions under an MTA-STS policy, a TLSA record, or no policy at all.", hrefTLS},
+	"T4":  {"T4", "Failures by result type", "Failure volume per RFC 8460 result type, grouped as negotiation, DANE, MTA-STS or unregistered.", hrefTLS},
+	"T5":  {"T5", "Failures by receiver", "Failures by receiving MX host, by receiving IP, and HELO names that disagree with their host.", hrefTLS},
+	"T6":  {"T6", "Failures by sender", "Failures by sending MTA, rolled up to network and provider using the shared rDNS and WHOIS cache.", hrefTLS},
+	"T7":  {"T7", "Top failure reasons", "The most frequent failure-reason codes, overall and within each result type.", hrefTLS},
+	"T8":  {"T8", "Policy divergence", "More than one policy string seen for the same domain on the same day: a stale cache or a divergent policy.", hrefTLS},
+	"T9":  {"T9", "MTA-STS mode and readiness", "Observed policy modes, and what the failures seen in testing would have cost in enforce.", hrefTLS},
+	"T10": {"T10", "MTA-STS endpoint health", "Fetch, WebPKI and policy-parse errors — the mta-sts host and its policy file, not the MX.", hrefTLS},
+	"T11": {"T11", "DANE and DNSSEC health", "tlsa-invalid, dnssec-invalid and dane-required occurrences, each with the organisation reporting it.", hrefTLS},
+	"T12": {"T12", "TLS reporter coverage", "Distinct, new and lapsed TLS reporters, days without a report, and arrival latency.", hrefTLS},
+	"T13": {"T13", "TLS hygiene", "Everything that makes the TLS numbers less trustworthy: duplicates, DKIM rejections, unattributed failures.", hrefTLS},
+	"T14": {"T14", "IPv4 vs IPv6", "How failures divide between address families, for both sending and receiving addresses.", hrefTLS},
+	"T15": {"T15", "TLS incidents", "Consecutive days sharing one result type and receiving host, as a worklist with durations.", hrefTLS},
+
 	// Alert rules.
 	"X1":  {"X1", "new_failing_source", "A source IP first seen recently is failing DMARC for a domain.", hrefAlerts},
 	"X2":  {"X2", "pass_rate_drop", "A domain's 7-day pass rate fell versus the previous 7 days.", hrefAlerts},
@@ -107,6 +126,14 @@ var All = map[string]Metric{
 	"X9":  {"X9", "dns_error_spike", "A reporter logged DNS temporary or permanent errors on many raw results.", hrefAlerts},
 	"X10": {"X10", "override_spike", "Policy-override volume jumped versus its 7-day daily mean.", hrefAlerts},
 	"X11": {"X11", "spoof_spike", "Unauthenticated mail from IPs outside the domain's SPF record spiked.", hrefAlerts},
+	"X12": {"X12", "tls_rate_drop", "A domain's 7-day TLS success rate fell versus the previous 7 days.", hrefAlerts},
+	"X13": {"X13", "tls_starttls_stripped", "A reporter that used to negotiate TLS with a host now says STARTTLS was not offered.", hrefAlerts},
+	"X14": {"X14", "tls_cert_expired", "A reporter saw an expired certificate on one of your MX hosts.", hrefAlerts},
+	"X15": {"X15", "tls_policy_inconsistent", "Reporters disagree about your TLS policy, or applied one you no longer publish.", hrefAlerts},
+	"X16": {"X16", "tls_policy_host_error", "Senders could not fetch or validate your MTA-STS policy file.", hrefAlerts},
+	"X17": {"X17", "tls_dane_invalid", "A reporter could not validate your DANE records.", hrefAlerts},
+	"X18": {"X18", "tls_reporter_silent", "A TLS reporter active in the last 14 days has stopped sending reports.", hrefAlerts},
+	"X19": {"X19", "tls_new_failing_receiver", "A receiving node started failing under an MX host whose other nodes are fine.", hrefAlerts},
 }
 
 // Get returns the metric with the given ID.

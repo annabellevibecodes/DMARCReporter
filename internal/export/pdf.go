@@ -195,6 +195,54 @@ func WritePDF(w io.Writer, rd *ReportData) error {
 			{Header: "Pass Rate", Width: 22, Align: "R"}, {Header: "First Seen", Width: 23, Align: "L"},
 		}, rows)
 	}
+	// SMTP TLS reporting.
+	pdf.Ln(6)
+	pdfSectionHeader(pdf, "SMTP TLS Reporting (RFC 8460)")
+	if kv := tlsSummaryKV(rd); len(kv) > 0 {
+		pdfKVTable(pdf, kv)
+		if rows := tlsPolicyRows(rd); len(rows) > 0 {
+			pdf.Ln(4)
+			pdfSectionHeader(pdf, "TLS Policy Applied")
+			pdfTable(pdf, []pdfCol{
+				{Header: "Policy Type", Width: 60, Align: "L"},
+				{Header: "Sessions", Width: 40, Align: "R"},
+				{Header: "Share", Width: 40, Align: "R"},
+			}, rows)
+		}
+		if rows := tlsFailureRows(rd); len(rows) > 0 {
+			pdf.Ln(4)
+			pdfSectionHeader(pdf, "TLS Failures by Result Type")
+			pdfTable(pdf, []pdfCol{
+				{Header: "Result Type", Width: 62, Align: "L"},
+				{Header: "Group", Width: 34, Align: "L"},
+				{Header: "Sessions", Width: 30, Align: "R"},
+				{Header: "Share", Width: 24, Align: "R"},
+			}, rows)
+		}
+		if rows := tlsReceiverRows(rd); len(rows) > 0 {
+			pdf.Ln(4)
+			pdfSectionHeader(pdf, "TLS Top Failing Receivers")
+			pdfTable(pdf, []pdfCol{
+				{Header: "MX Host", Width: 62, Align: "L"},
+				{Header: "Nodes", Width: 18, Align: "R"},
+				{Header: "Failed", Width: 24, Align: "R"},
+				{Header: "Result Types", Width: 71, Align: "L"},
+			}, rows)
+		}
+		if rows := tlsAlertRows(rd); len(rows) > 0 {
+			pdf.Ln(4)
+			pdfSectionHeader(pdf, "Open TLS Alerts")
+			pdfTable(pdf, []pdfCol{
+				{Header: "Rule", Width: 42, Align: "L"},
+				{Header: "Sev", Width: 20, Align: "L"},
+				{Header: "Domain", Width: 38, Align: "L"},
+				{Header: "Message", Width: 75, Align: "L"},
+			}, rows)
+		}
+	} else {
+		pdfKVTable(pdf, [][2]string{{"TLS reports", "none for this period"}})
+	}
+
 	if rows := alertRows(rd); len(rows) > 0 {
 		pdf.Ln(6)
 		pdfSectionHeader(pdf, "Open Alerts")

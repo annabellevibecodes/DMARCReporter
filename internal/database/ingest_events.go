@@ -20,6 +20,11 @@ const (
 	IngestStatusDuplicate  = "duplicate"
 	IngestStatusParseError = "parse_error"
 	IngestStatusRejected   = "rejected"
+	// IngestStatusDuplicateRange is a report-id already seen for that
+	// organisation arriving with a different date range. Counted apart from
+	// ordinary duplicates: a retry is harmless, but id reuse across windows
+	// means a window is being dropped and nobody would otherwise notice.
+	IngestStatusDuplicateRange = "duplicate_range"
 )
 
 // IngestEvent is one processed attachment.

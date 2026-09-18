@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/emersion/go-message/mail"
@@ -21,6 +22,20 @@ type EMLAttachment struct {
 	// ReceivedAt is the message's Date header as Unix seconds (0 when absent
 	// or unparseable). It is the same for every attachment of one message.
 	ReceivedAt int64
+}
+
+// TLSRPTMailHeaders returns the RFC 8460 §5.3 report submission headers of a
+// mail carrying a TLS report: TLS-Report-Domain (the domain the report is
+// about) and TLS-Report-Submitter (the domain submitting it). Either is ""
+// when the header is absent or the message cannot be parsed — these headers
+// are advisory metadata, never a reason to reject a report.
+func TLSRPTMailHeaders(raw []byte) (reportDomain, submitter string) {
+	mr, err := mail.CreateReader(bytes.NewReader(raw))
+	if err != nil {
+		return "", ""
+	}
+	return strings.TrimSpace(mr.Header.Get("TLS-Report-Domain")),
+		strings.TrimSpace(mr.Header.Get("TLS-Report-Submitter"))
 }
 
 // ExtractEMLAttachments parses an RFC 2822 message and returns every part whose

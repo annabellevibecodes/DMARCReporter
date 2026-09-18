@@ -1,0 +1,22 @@
+{
+  "organization-name": "Reporter-S",
+  "date-range": {
+    "start-datetime": "2026-09-07T00:00:00Z",
+    "end-datetime": "2026-09-07T23:59:59Z"
+  },
+  "report-id": "sparse-1",
+  "policies": [{
+    "policy": {
+      "policy-type": "sts",
+      "policy-domain": "sparse.example.com"
+    },
+    "summary": {
+      "total-successful-session-count": 3,
+      "total-failure-session-count": 2
+    },
+    "failure-details": [{
+      "result-type": "validation-failure",
+      "failed-session-count": 2
+    }]
+  }]
+}

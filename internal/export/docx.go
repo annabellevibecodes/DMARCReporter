@@ -155,6 +155,34 @@ func buildDocxBody(rd *ReportData, title string) string {
 		sb.WriteString(docxHeading2("New Sources This Period"))
 		sb.WriteString(docxTable(newSourceHeaders, rows))
 	}
+	sb.WriteString(docxPara(""))
+	sb.WriteString(docxHeading2("SMTP TLS Reporting (RFC 8460)"))
+	if kvRows := tlsSummaryKV(rd); len(kvRows) > 0 {
+		sb.WriteString(docxTable([]string{"Metric", "Value"}, kvSliceToRows(kvRows)))
+		if rows := tlsPolicyRows(rd); len(rows) > 0 {
+			sb.WriteString(docxPara(""))
+			sb.WriteString(docxHeading2("TLS Policy Applied"))
+			sb.WriteString(docxTable(tlsPolicyHeaders, rows))
+		}
+		if rows := tlsFailureRows(rd); len(rows) > 0 {
+			sb.WriteString(docxPara(""))
+			sb.WriteString(docxHeading2("TLS Failures by Result Type"))
+			sb.WriteString(docxTable(tlsFailureHeaders, rows))
+		}
+		if rows := tlsReceiverRows(rd); len(rows) > 0 {
+			sb.WriteString(docxPara(""))
+			sb.WriteString(docxHeading2("TLS Top Failing Receivers"))
+			sb.WriteString(docxTable(tlsReceiverHeaders, rows))
+		}
+		if rows := tlsAlertRows(rd); len(rows) > 0 {
+			sb.WriteString(docxPara(""))
+			sb.WriteString(docxHeading2("Open TLS Alerts"))
+			sb.WriteString(docxTable(tlsAlertHeaders, rows))
+		}
+	} else {
+		sb.WriteString(docxPara("No TLS reports for this period."))
+	}
+
 	if rows := alertRows(rd); len(rows) > 0 {
 		sb.WriteString(docxPara(""))
 		sb.WriteString(docxHeading2("Open Alerts"))
