@@ -78,11 +78,24 @@ func pageWindow(page, totalPages int) []int {
 }
 
 // safeRedirect reports whether s is a local, path-only redirect target.
-// Besides the obvious "//host" form it rejects backslashes (browsers
-// normalise "/\host" to "//host") and anything url.Parse sees as having a
-// scheme or host.
+//
+// A redirect target must start with "/" and must not continue with a second
+// "/" or a "\": browsers read "//host" as an absolute URL and normalise
+// "/\host" to "//host", so either would leave the site (CWE-601). Both
+// characters are checked explicitly at position 1 so the guard is verifiable
+// by eye — an earlier HasPrefix/ContainsAny spelling covered the same cases
+// but read as a leading-slash check only.
+//
+// The remaining checks are defence in depth: no backslash anywhere, and
+// nothing url.Parse sees as carrying a scheme, host or userinfo.
 func safeRedirect(s string) bool {
-	if s == "" || s[0] != '/' || strings.HasPrefix(s, "//") || strings.ContainsAny(s, `\`) {
+	if s == "" || s[0] != '/' {
+		return false
+	}
+	if len(s) > 1 && (s[1] == '/' || s[1] == '\\') {
+		return false
+	}
+	if strings.ContainsAny(s, `\`) {
 		return false
 	}
 	u, err := url.Parse(s)
@@ -90,6 +103,24 @@ func safeRedirect(s string) bool {
 		return false
 	}
 	return true
+}
+
+// currentPath returns the request's path and query for use as a form's
+// `redirect` field. It deliberately does not use c.OriginalURL(): that is the
+// raw request URI, which is in absolute form ("http://host/alerts") whenever a
+// proxy forwards it that way. Planting an absolute URL in the redirect field
+// makes safeRedirect reject it on the POST, so the inline forms silently fall
+// through to their JSON response and the user lands on a JSON blob instead of
+// back on the page. An unusable path degrades to "/" rather than to nothing.
+func currentPath(c *fiber.Ctx) string {
+	p := string(c.Request().URI().PathOriginal())
+	if qs := c.Request().URI().QueryString(); len(qs) > 0 {
+		p += "?" + string(qs)
+	}
+	if !safeRedirect(p) {
+		return "/"
+	}
+	return p
 }
 
 // setFlash stores a flash message in response cookies.

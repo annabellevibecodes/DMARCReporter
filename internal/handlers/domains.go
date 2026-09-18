@@ -401,7 +401,7 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 		"Auth":                  auth,
 		"Policy":                policy,
 		"SourcesQuery":          template.URL("period=" + url.QueryEscape(period) + "&domain=" + url.QueryEscape(domain)),
-		"CurrentPath":           c.OriginalURL(),
+		"CurrentPath":           currentPath(c),
 		"FlashKind":             flashKind,
 		"FlashMsg":              flashMsg,
 		"Title":                 domain + " — DMARC Reporter",

@@ -3,21 +3,20 @@
 
 {{template "partials/help_nav" .}}
 
-<nav style="margin-bottom:2rem;">
-  <small>
-    <a href="#ids">How to read an ID</a> &middot;
-    <a href="#compliance">C1–C8 Compliance</a> &middot;
-    <a href="#sources">S1–S6 Sources</a> &middot;
-    <a href="#auth">A1–A8 Authentication</a> &middot;
-    <a href="#policy">P1–P6 Policy</a> &middot;
-    <a href="#reporters">R1–R8 Reporters</a> &middot;
-    <a href="#windows">Windows &amp; comparisons</a>
-  </small>
+<nav class="help-toc">
+  <b>On this page:</b>
+  <a href="#ids">How to read an ID</a> &middot;
+  <a href="#compliance">C1–C8 Compliance</a> &middot;
+  <a href="#sources">S1–S6 Sources</a> &middot;
+  <a href="#auth">A1–A8 Authentication</a> &middot;
+  <a href="#policy">P1–P6 Policy</a> &middot;
+  <a href="#reporters">R1–R8 Reporters</a> &middot;
+  <a href="#windows">Windows &amp; comparisons</a>
 </nav>
 
 <!-- How to read an ID -->
-<article id="ids">
-  <header><strong>How to read an identifier</strong></header>
+<article class="help-chapter" id="ids">
+  <header><h2>How to read an identifier</h2></header>
   <p>
     Small tags such as <code>C5</code> or <code>S3</code> appear next to blocks and tables
     throughout the interface. Each one names a specific metric with a fixed definition, so the
@@ -42,8 +41,8 @@
 </article>
 
 <!-- Compliance -->
-<article id="compliance">
-  <header><strong>C1–C8 — Compliance</strong></header>
+<article class="help-chapter" id="compliance">
+  <header><h2>C1–C8 — Compliance</h2></header>
   <p>
     The headline numbers: how much mail there was, how much authenticated, and what receivers
     did about the rest.
@@ -96,8 +95,8 @@
 </article>
 
 <!-- Sources -->
-<article id="sources">
-  <header><strong>S1–S6 — Sources</strong></header>
+<article class="help-chapter" id="sources">
+  <header><h2>S1–S6 — Sources</h2></header>
   <p>
     A <em>source</em> is one IP address that sent mail claiming to be from one of your domains.
   </p>
@@ -139,8 +138,8 @@
 </article>
 
 <!-- Authentication -->
-<article id="auth">
-  <header><strong>A1–A8 — Authentication</strong></header>
+<article class="help-chapter" id="auth">
+  <header><h2>A1–A8 — Authentication</h2></header>
   <p>
     Where the C family reports the DMARC verdict, the A family reports the underlying checks.
     The distinction matters: a message can pass DKIM outright and still fail DMARC because the
@@ -186,8 +185,8 @@
 </article>
 
 <!-- Policy -->
-<article id="policy">
-  <header><strong>P1–P6 — Policy</strong></header>
+<article class="help-chapter" id="policy">
+  <header><h2>P1–P6 — Policy</h2></header>
   <p>
     What reporters saw when they looked up your DMARC record. This is the published policy as
     observed from the outside, which can differ from what you believe you published.
@@ -224,8 +223,8 @@
 </article>
 
 <!-- Reporters -->
-<article id="reporters">
-  <header><strong>R1–R8 — Reporters and hygiene</strong></header>
+<article class="help-chapter" id="reporters">
+  <header><h2>R1–R8 — Reporters and hygiene</h2></header>
   <p>
     Metrics about the reports themselves rather than the mail. They answer "can I trust this
     picture?" — missing reporters mean blind spots, not improvements.
@@ -270,8 +269,8 @@
 </article>
 
 <!-- Windows -->
-<article id="windows">
-  <header><strong>Windows and comparisons</strong></header>
+<article class="help-chapter" id="windows">
+  <header><h2>Windows and comparisons</h2></header>
   <p>
     Every metric is evaluated over the period selected on the page, matched against the report's
     own window start rather than when the report arrived. Dashboard tiles also show a delta

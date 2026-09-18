@@ -184,7 +184,7 @@ func (a *App) HandleReportersPage(c *fiber.Ctx) error {
 		"PeriodOptions":  periodOptions,
 		"SelectedPeriod": period,
 		"PeriodLabel":    periodLabel,
-		"CurrentPath":    c.OriginalURL(),
+		"CurrentPath":    currentPath(c),
 		"IMAPEnabled":    a.FetchEnabled(),
 		"FlashKind":      flashKind,
 		"FlashMsg":       flashMsg,

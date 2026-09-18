@@ -212,3 +212,22 @@ html {
 .metric-tip.visible{opacity:1;}
 .metric-tip b{display:block;margin-bottom:2px;font-family:var(--ax-font-m);
   font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.75;}
+
+/* Help chapters. The Help pages are plain prose in <article> blocks, and only
+   the default theme loads Pico, so chapter sizing and spacing live here where
+   every theme picks them up. Colours stay on currentColor so the rules work in
+   Pico's light and dark modes as well as in the three themes. */
+.help-chapter{margin:0 0 3.5rem;scroll-margin-top:1rem;}
+.help-chapter:last-of-type{margin-bottom:1.5rem;}
+.help-chapter > header{
+  background:none;border-radius:0;border-bottom:3px solid currentColor;
+  margin:0 0 1.5rem;padding:0 0 .5rem;}
+.help-chapter > header h2{
+  font-size:1.7rem;line-height:1.2;font-weight:700;margin:0;letter-spacing:.01em;}
+.help-chapter h3{
+  font-size:1.15rem;line-height:1.3;font-weight:700;margin:2rem 0 .6rem;}
+.help-chapter > :last-child{margin-bottom:0;}
+
+/* In-page chapter index above the first chapter. */
+.help-toc{margin:0 0 2.5rem;font-size:.9rem;line-height:1.9;}
+.help-toc b{margin-right:.35rem;}

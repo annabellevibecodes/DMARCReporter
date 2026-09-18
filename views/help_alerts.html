@@ -3,10 +3,10 @@
 
 {{template "partials/help_nav" .}}
 
-<nav style="margin-bottom:2rem;"><small><a href="#alerts">Alert rules</a> &middot; <a href="#health">Health score</a></small></nav>
+<nav class="help-toc"><b>On this page:</b> <a href="#alerts">Alert rules</a> &middot; <a href="#health">Health score</a></nav>
 
-<article id="alerts">
-  <header><strong>Alerts</strong></header>
+<article class="help-chapter" id="alerts">
+  <header><h2>Alerts</h2></header>
   <p>
     Alert rules run after every import (upload or mailbox fetch) and on a timer
     (<code>ALERT_EVAL_INTERVAL</code>, default 24h) so time-based rules fire even when no new
@@ -46,8 +46,8 @@
 </article>
 
 <!-- Health -->
-<article id="health">
-  <header><strong>Health Score</strong></header>
+<article class="help-chapter" id="health">
+  <header><h2>Health Score</h2></header>
   <p>The score (0–100) on the dashboard and domain pages adds five components, each capped at its
   weight (<code>HEALTH_W_*</code>):</p>
   <table>

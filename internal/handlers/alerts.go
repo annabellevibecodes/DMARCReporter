@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -112,17 +113,19 @@ func payloadValue(v any) string {
 	return string(b)
 }
 
-// contextHref links an alert to the page where it can be investigated.
+// contextHref links an alert to the page where it can be investigated. Key and
+// Domain reach us from report data, so both are escaped: an unescaped segment
+// containing "/" or "?" would silently point the link somewhere else.
 func contextHref(al database.Alert) string {
 	switch al.Rule {
 	case "new_failing_source", "known_source_degraded", "spoof_spike":
 		if al.Rule != "spoof_spike" && al.Key != "" {
-			return "/sources/" + al.Key
+			return "/sources/" + url.PathEscape(al.Key)
 		}
 		return "/sources?matrix=neither&period=30d"
 	case "new_selector", "selector_missing", "policy_changed", "policy_inconsistent", "pass_rate_drop", "override_spike":
 		if al.Domain != "" {
-			return "/domains/" + al.Domain
+			return "/domains/" + url.PathEscape(al.Domain)
 		}
 	case "reporter_silent", "dns_error_spike":
 		return "/reporters"
@@ -185,7 +188,7 @@ func (a *App) HandleAlertsPage(c *fiber.Ctx) error {
 		"Webhook":       a.Cfg.AlertWebhookURL != "",
 		"Email":         a.Cfg.SMTPHost != "" && a.Cfg.SMTPTo != "",
 		"EvalInterval":  a.Cfg.AlertEvalInterval.String(),
-		"CurrentPath":   c.OriginalURL(),
+		"CurrentPath":   currentPath(c),
 		"IMAPEnabled":   a.FetchEnabled(),
 		"FlashKind":     flashKind,
 		"FlashMsg":      flashMsg,

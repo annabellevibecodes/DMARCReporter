@@ -3,19 +3,19 @@
 
 {{template "partials/help_nav" .}}
 
-<nav style="margin-bottom:2rem;"><small><a href="#bimi">BIMI</a> &middot; <a href="#mta-sts">MTA-STS</a> &middot; <a href="#tlsrpt">TLS-RPT</a></small></nav>
+<nav class="help-toc"><b>On this page:</b> <a href="#bimi">BIMI</a> &middot; <a href="#mta-sts">MTA-STS</a> &middot; <a href="#tlsrpt">TLS-RPT</a></nav>
 
 <!-- BIMI -->
-<article id="bimi">
-  <header><strong>BIMI — Brand Indicators for Message Identification</strong></header>
+<article class="help-chapter" id="bimi">
+  <header><h2>BIMI — Brand Indicators for Message Identification</h2></header>
   <p>
     BIMI is an emerging standard that allows domain owners to display a verified brand logo
     next to their emails in supporting mail clients (Gmail, Apple Mail, Yahoo Mail, etc.).
     It requires a valid DMARC policy of <code>quarantine</code> or <code>reject</code>.
   </p>
-  <p><strong>DNS record:</strong></p>
+  <h3>DNS record</h3>
   <pre><code>default._bimi.example.com  TXT  "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/cert.pem;"</code></pre>
-  <p><strong>Key tags:</strong></p>
+  <h3>Key tags</h3>
   <table>
     <thead><tr><th>Tag</th><th>Meaning</th></tr></thead>
     <tbody>
@@ -31,14 +31,14 @@
 </article>
 
 <!-- MTA-STS -->
-<article id="mta-sts">
-  <header><strong>MTA-STS — Mail Transfer Agent Strict Transport Security</strong></header>
+<article class="help-chapter" id="mta-sts">
+  <header><h2>MTA-STS — Mail Transfer Agent Strict Transport Security</h2></header>
   <p>
     MTA-STS is a mechanism that allows domains to declare that inbound SMTP connections must
     use TLS and that the TLS certificate must be valid. It prevents downgrade attacks where
     an attacker strips TLS from a mail connection.
   </p>
-  <p><strong>How it works:</strong></p>
+  <h3>How it works</h3>
   <ol>
     <li>Publish a DNS record: <code>_mta-sts.example.com TXT "v=STSv1; id=20240101000000Z;"</code></li>
     <li>Host a policy file at <code>https://mta-sts.example.com/.well-known/mta-sts.txt</code>
@@ -46,7 +46,7 @@
     <li>Sending servers that support MTA-STS will fetch and cache your policy and enforce TLS
         when delivering mail to your domain.</li>
   </ol>
-  <p><strong>Policy modes:</strong></p>
+  <h3>Policy modes</h3>
   <table>
     <thead><tr><th>Mode</th><th>Behaviour</th></tr></thead>
     <tbody>
@@ -62,8 +62,8 @@
 </article>
 
 <!-- TLS-RPT -->
-<article id="tlsrpt">
-  <header><strong>TLS-RPT — SMTP TLS Reporting</strong></header>
+<article class="help-chapter" id="tlsrpt">
+  <header><h2>TLS-RPT — SMTP TLS Reporting</h2></header>
   <p>
     TLS-RPT (RFC 8460) is a companion standard to MTA-STS. Where DMARC reports tell you whether
     incoming mail claiming to be from your domain authenticated correctly, TLS-RPT reports tell you
@@ -71,7 +71,7 @@
     all. They arrive as JSON documents in the same mailbox as DMARC reports and are parsed and
     stored automatically.
   </p>
-  <p><strong>DNS record:</strong></p>
+  <h3>DNS record</h3>
   <pre><code>_smtp._tls.example.com  TXT  "v=TLSRPTv1; rua=mailto:tls-reports@example.com;"</code></pre>
   <p>
     View imported reports on the <a href="/tlsrpt">TLS Reports</a> page — it shows total successful

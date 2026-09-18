@@ -3,11 +3,11 @@
 
 {{template "partials/help_nav" .}}
 
-<nav style="margin-bottom:2rem;"><small><a href="#accounts">Mail accounts</a> &middot; <a href="#reading">Reading the dashboard</a></small></nav>
+<nav class="help-toc"><b>On this page:</b> <a href="#accounts">Mail accounts</a> &middot; <a href="#reading">Reading the dashboard</a></nav>
 
 <!-- Mail Accounts -->
-<article id="accounts">
-  <header><strong>Fetching Reports from Mailboxes</strong></header>
+<article class="help-chapter" id="accounts">
+  <header><h2>Fetching Reports from Mailboxes</h2></header>
   <p>
     The <a href="/accounts">Accounts</a> page manages the mailboxes that DMARC and TLS-RPT reports
     are fetched from. Each account is one mailbox; you can add as many as you need (e.g. one per
@@ -16,7 +16,7 @@
     background run across every enabled account. Progress and the outcome of the last run are
     shown per account on the Accounts page.
   </p>
-  <p><strong>Supported account types:</strong></p>
+  <h3>Supported account types</h3>
   <table>
     <thead><tr><th>Type</th><th>Authentication</th></tr></thead>
     <tbody>
@@ -52,21 +52,21 @@
 </article>
 
 <!-- Reading the dashboard -->
-<article id="reading">
-  <header><strong>Reading This Dashboard</strong></header>
-  <p><strong>Pass vs Fail</strong></p>
+<article class="help-chapter" id="reading">
+  <header><h2>Reading This Dashboard</h2></header>
+  <h3>Pass vs Fail</h3>
   <p>
     A message row is counted as <em>passed</em> when it passes DMARC (i.e. SPF or DKIM passed
     with correct alignment). It is counted as <em>failed</em> when neither check passed with
     alignment. A high failure rate from a source you recognise usually means misconfigured
     SPF/DKIM; from an unknown source it may indicate spoofing.
   </p>
-  <p><strong>Pass rate</strong></p>
+  <h3>Pass rate</h3>
   <p>
     Shown as a percentage of messages from that source that passed DMARC. A legitimate sending
     service should be at or near 100%. Values well below 100% warrant investigation.
   </p>
-  <p><strong>Envelope From vs Header From</strong></p>
+  <h3>Envelope From vs Header From</h3>
   <p>
     The <em>envelope from</em> (return-path) is used for SPF and for bounce delivery.
     The <em>header from</em> is the address displayed to recipients. DMARC requires alignment
@@ -74,13 +74,13 @@
     a different return-path domain, which is common with third-party senders (ESPs, CRMs).
     Those senders need to either publish DKIM signed with your domain or be added to your SPF record.
   </p>
-  <p><strong>Source IPs</strong></p>
+  <h3>Source IPs</h3>
   <p>
     Each row in an aggregate report represents one source IP sending mail that claims to be
     from your domain. Unexpected IPs you do not recognise could indicate a misconfigured
     service, a compromised account, or an active spoofing attempt.
   </p>
-  <p><strong>Provider labels</strong></p>
+  <h3>Provider labels</h3>
   <p>
     Where reverse DNS is cached for a source IP, the Sources pages and dashboard show a friendly
     provider name (Google, Microsoft 365, SendGrid, Mailchimp, and others) instead of a bare IP
@@ -88,7 +88,7 @@
     sending mail as you." Run the <a href="/enrich">Enrich</a> page to populate this for IPs that
     have not been looked up yet.
   </p>
-  <p><strong>Data Enrichment</strong></p>
+  <h3>Data Enrichment</h3>
   <p>
     Use the <a href="/enrich">Enrich</a> page to resolve reverse DNS, WHOIS organisation, ASN and
     country data for all source IPs, to check DMARC, BIMI, and MTA-STS records for all known
