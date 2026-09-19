@@ -19,7 +19,7 @@
       <span class="u-label">Health score</span>
       <div class="kpi-value-row">
         <div>
-          <div class="kpi-value">{{.HealthKPI.Score}}<small>/100</small></div>
+          <div class="kpi-value">{{.HealthKPI.Score}}<small>/{{.HealthKPI.Max}}</small></div>
           <div class="kpi-label-tag">{{.HealthKPI.Label}}</div>
         </div>
         {{if .HealthKPI.Delta}}<span class="delta {{.HealthKPI.Delta.Dir}}" title="{{$.CompareLabel}}">{{.HealthKPI.Delta.Text}}</span>{{end}}

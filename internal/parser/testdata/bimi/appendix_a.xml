@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<feedback>
+  <report_metadata>
+    <org_name>reporter.tld</org_name>
+    <email>info@reporter.tld</email>
+    <report_id>uniqueidentifier</report_id>
+    <date_range>
+      <begin>1609459200M</begin>
+      <end>1609545599</end>
+    </date_range>
+  </report_metadata>
+  <policy_published>
+    <domain>sender.tld</domain>
+    <adkim>r</adkim>
+    <aspf>r</aspf>
+    <p>reject</p>
+    <sp>reject</sp>?
+    <pct>100</pct>
+  </policy_published>
+  <record>
+    <row>
+      <source_ip>192.0.2.1</source_ip>
+      <count>10</count>
+      <policy_evaluated>
+        <disposition>none</disposition>
+        <dkim>pass</dkim>
+        <spf>pass</spf>
+      </policy_evaluated>
+    </row>
+    <identifiers>
+      <header_from>sender.tld</header_from>
+    </identifiers>
+    <auth_results>
+      <dkim>
+        <domain>sender.tld</domain>
+        <result>pass</result>
+        <selector>selector01</selector>
+      </dkim>
+      <spf>
+        <domain>sender.tld</domain>
+        <result>pass</result>
+      </spf>
+    </auth_results>
+  </record>
+  <bimi>
+    <domain aligned="sender.tld" assertion="sender.tld">
+      <assertion selector="default" a=""
+        l="https://www.sender.tld/images/logos/bimi.svg">
+        <evidence />
+        <errors>
+          <indicator class="temp" type="retrieval"
+            description="DNS RCODE:3">1</indicator>
+        </errors>
+      </assertion>
+    </domain>
+  </bimi>
+</feedback>

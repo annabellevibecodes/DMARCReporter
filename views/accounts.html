@@ -27,8 +27,8 @@
       <td>{{.Provider}}</td>
       <td>{{.Username}}<br><small>{{.Host}}:{{.Port}}{{if eq .TLS 0}} <mark>no TLS</mark>{{end}}</small></td>
       <td>{{if eq .AuthType "password"}}password{{else if eq .AuthType "oauth-refresh"}}OAuth (user){{else}}OAuth (app){{end}}</td>
-      <td>{{.Mailbox}}</td>
-      <td>{{if .LastFetchAt}}{{unixTime .LastFetchAt}}<br><small>{{.LastFetchImported}} imported</small>{{else}}never{{end}}</td>
+      <td>{{.Mailbox}}{{if .IsSeed}}<br><small><mark>seed</mark> — read for BIMI verdicts only</small>{{end}}</td>
+      <td>{{if .LastFetchAt}}{{unixTime .LastFetchAt}}<br><small>{{.LastFetchImported}} {{if .IsSeed}}verdict(s){{else}}imported{{end}}</small>{{else}}never{{end}}</td>
       <td>
         {{if eq .LastFetchStatus "ok"}}<ins>ok</ins>
         {{else if eq .LastFetchStatus "error"}}<del title="{{.LastFetchDetail}}">error</del>
@@ -84,6 +84,21 @@
   <div class="grid">
     <label>Username / email
       <input type="text" name="username" placeholder="dmarc@example.com" required>
+    </label>
+    <label>Purpose
+      <select name="purpose">
+        <option value="report" selected>Reports — a mailbox receiving DMARC and TLS reports</option>
+        <option value="seed">Seed — your own mail, read only for the BIMI verdicts receivers stamp on it</option>
+      </select>
+      <small>
+        A seed mailbox is never read for report attachments and nothing is ever moved out of it:
+        only message headers are downloaded, and only the <code>bimi=</code> entry of
+        <code>Authentication-Results</code> is stored. It answers what a real receiver did with mail
+        you actually sent there (B21), and says nothing about mail you did not.
+        Only the <em>topmost</em> <code>Authentication-Results</code> header is trusted — the one
+        your provider added — because anyone who can email this address can write the ones beneath
+        it, and the time recorded is your server's, not the sender's.
+      </small>
     </label>
     <label>Mailbox <small>(Graph API: well-known name like <code>inbox</code>, or a folder ID)</small>
       <input type="text" name="mailbox" value="INBOX">

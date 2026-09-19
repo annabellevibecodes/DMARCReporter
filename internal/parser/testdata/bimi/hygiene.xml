@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<feedback>
+  <report_metadata>
+    <org_name>reporter.tld</org_name><report_id>hygiene</report_id>
+    <date_range><begin>1609459200</begin><end>1609545599</end></date_range>
+  </report_metadata>
+  <policy_published><domain>sender.tld</domain><p>reject</p></policy_published>
+  <record>
+    <row><source_ip>192.0.2.1</source_ip><count>10</count>
+      <policy_evaluated><disposition>none</disposition><dkim>pass</dkim><spf>pass</spf></policy_evaluated></row>
+    <identifiers><header_from>sender.tld</header_from></identifiers>
+  </record>
+  <bimi>
+    <domain aligned="sender.tld" assertion="sender.tld">
+      <assertion selector="default" l="https://sender.tld/logo.svg" a="">
+        <evidence evidence-date="2026-01-02T15:04:05Z" />
+        <errors>
+          <indicator class="temp" type="retrieval">1</indicator>
+          <indicator class="temp" type="retrieval">2</indicator>
+          <indicator class="perm" type="retrieval">0</indicator>
+          <indicator class="perm" type="disintegrated">4</indicator>
+          <indicator class="sideways" type="parsing">5</indicator>
+          <indicator type="parsing">6</indicator>
+          <flavour class="perm" type="parsing">7</flavour>
+          <undefined class="perm">not a number</undefined>
+        </errors>
+      </assertion>
+      <assertion selector="default" l="https://sender.tld/logo.svg" a="">
+        <errors><evidence class="perm" type="policy">2</evidence></errors>
+      </assertion>
+      <assertion l="https://sender.tld/other.svg">
+        <errors><evidence class="perm" type="policy">1</evidence></errors>
+      </assertion>
+    </domain>
+    <domain aligned="sender.tld" assertion="sender.tld">
+      <assertion selector="winter" l="https://sender.tld/winter.svg" a="">
+        <errors><indicator class="perm" type="validation">9</indicator></errors>
+      </assertion>
+    </domain>
+    <domain>
+      <assertion selector="orphan" l="unpublished" a="">
+        <errors><assertion class="perm" type="retrieval">1</assertion></errors>
+      </assertion>
+    </domain>
+  </bimi>
+</feedback>

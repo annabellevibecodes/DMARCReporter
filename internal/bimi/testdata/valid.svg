@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<svg width="400px" height="400px" xmlns="http://www.w3.org/2000/svg"
+    version="1.2" baseProfile="tiny-ps"
+    zoomAndPan="disable" externalResourcesRequired="false">
+  <title>Example, Inc.</title>
+  <desc>Logo for Example, Inc.</desc>
+  <rect x="1" y="1" width="399" height="399" fill="teal"
+     stroke="gray" stroke-width="9"/>
+  <circle cx="200" cy="200" r="125" fill="white"
+     stroke="black" stroke-width="2"/>
+  <polyline fill="gray" stroke="silver" stroke-width="9"
+     points="40,30 25,40 100,330 310,270 290,250 120,300 40,26"/>
+</svg>

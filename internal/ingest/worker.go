@@ -140,6 +140,12 @@ func (w *Worker) runAll() (int, error) {
 }
 
 func (w *Worker) ingestOne(acc database.Account) (int, error) {
+	// A seed mailbox holds the operator's own mail, not reports. It is read
+	// for the BIMI verdicts receivers stamped on it, and for nothing else:
+	// no attachment is opened and no message is moved.
+	if acc.IsSeed() {
+		return w.ingestSeed(acc)
+	}
 	if acc.Provider == database.ProviderGraph {
 		token, err := w.GraphAccessToken(&acc)
 		if err != nil {
@@ -152,6 +158,22 @@ func (w *Worker) ingestOne(acc database.Account) (int, error) {
 		return 0, err
 	}
 	return imap.IngestAccount(w.DB, acc, password, saslClient)
+}
+
+// ingestSeed reads one seed mailbox, returning how many new verdicts it found.
+func (w *Worker) ingestSeed(acc database.Account) (int, error) {
+	if acc.Provider == database.ProviderGraph {
+		token, err := w.GraphAccessToken(&acc)
+		if err != nil {
+			return 0, err
+		}
+		return graph.IngestSeedAccount(w.DB, acc, token)
+	}
+	password, saslClient, err := w.Credentials(&acc)
+	if err != nil {
+		return 0, err
+	}
+	return imap.IngestSeedAccount(w.DB, acc, password, saslClient)
 }
 
 // GraphAccessToken decrypts the account's secrets and returns a bearer token

@@ -200,20 +200,14 @@ func (a *App) HandleDashboard(c *fiber.Ctx) error {
 
 	// Cache-only: the background refresher (StartDomainCheckRefresher) keeps
 	// domain_checks fresh, so the dashboard never blocks on live DNS lookups.
-	var bimiConfigured, bimiTotal, mtaStsConfigured int
+	var domainTotal, mtaStsConfigured int
 	for _, d := range allDomains {
-		bimiTotal++
-		if dc, ok := domainCheckCache[d.Domain]; ok {
-			if dc.HasBIMI == 1 {
-				bimiConfigured++
-			}
-			if dc.HasMTASTS == 1 {
-				mtaStsConfigured++
-			}
+		domainTotal++
+		if dc, ok := domainCheckCache[d.Domain]; ok && dc.HasMTASTS == 1 {
+			mtaStsConfigured++
 		}
 	}
-	bimiNotConfigured := bimiTotal - bimiConfigured
-	mtaStsNotConfigured := bimiTotal - mtaStsConfigured
+	mtaStsNotConfigured := domainTotal - mtaStsConfigured
 
 	type trendPayload struct {
 		Labels []string `json:"labels"`
@@ -267,9 +261,19 @@ func (a *App) HandleDashboard(c *fiber.Ctx) error {
 		return err
 	}
 
+	// BIMI readiness (B10 and B6–B9), not record existence: a domain can
+	// publish a perfect record and still never show a logo, and the old
+	// "configured" figure told the operator they were done when they were not.
+	bimiBreakdown, err := database.GetBIMIReadinessBreakdown(a.DB, f)
+	if err != nil {
+		return err
+	}
 	bimiPie := piePayload{
-		Labels: []string{"Configured", "Not configured"},
-		Values: []int64{int64(bimiConfigured), int64(bimiNotConfigured)},
+		Labels: []string{"Logo shows", "Blocked by policy", "Logo or evidence broken", "No record"},
+		Values: []int64{
+			bimiBreakdown.Valid, bimiBreakdown.BlockedByPolicy,
+			bimiBreakdown.Broken, bimiBreakdown.NoRecord,
+		},
 	}
 	bimiPieBytes, err := json.Marshal(bimiPie)
 	if err != nil {
@@ -307,6 +311,7 @@ func (a *App) HandleDashboard(c *fiber.Ctx) error {
 		"FailureModeData":   template.JS(fmBytes),
 		"PolicyPieData":     template.JS(policyPieBytes),
 		"BIMIPieData":       template.JS(bimiPieBytes),
+		"BIMIReadiness":     bimiBreakdown,
 		"MTASTSPieData":     template.JS(mtaStsPieBytes),
 		"TopDomains":        topDomains,
 		"MoreDomains":       len(allDomains) > 5,

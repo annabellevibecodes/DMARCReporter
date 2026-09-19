@@ -64,6 +64,30 @@ type Config struct {
 	AlertTLSReporterGapDays   int     // X18: days of silence
 	AlertTLSNewFailingIPMin   int64   // X19: minimum failures from a new node
 
+	// BIMI alert thresholds (X20–X27).
+	AlertBIMIExpiryDays int // X25: days of evidence-document runway left
+
+	// BIMIValidate enables the active validation of phase 2: fetching the
+	// indicator at l= and the evidence document at a=. It is the only feature
+	// that makes outbound HTTPS requests to hosts named by third-party DNS
+	// records, so an operator with restrictive egress can switch it off and
+	// keep the record-level checks (B1–B5, B10), which need only DNS.
+	BIMIValidate bool
+	// BIMIRootsPath is a PEM bundle of Mark Verifying Authority roots. When
+	// empty the system trust store is used, and the UI says so: "valid against
+	// your OS bundle" is a weaker claim than "valid against the roots
+	// receivers actually use" (guidance draft §10.2).
+	BIMIRootsPath string
+	// BIMIMaxRedirects caps the redirects followed when retrieving either
+	// document (guidance draft §5.6).
+	BIMIMaxRedirects int
+	// BIMIFetchTimeout bounds one document retrieval.
+	BIMIFetchTimeout time.Duration
+	// BIMICheckRevocation enables the OCSP query for the evidence document.
+	// It is a second outbound request, to a responder the certificate names,
+	// so it is opt-in.
+	BIMICheckRevocation bool
+
 	// TLSRPTRequireDKIM applies RFC 8460 §3: a TLS report that arrived as mail
 	// without a valid DKIM signature is stored and shown, with its reason, but
 	// left out of the T-series metrics. Reports uploaded through the web form
@@ -77,6 +101,7 @@ type Config struct {
 	HealthWeightCoverage    float64
 	HealthWeightAlerts      float64
 	HealthWeightTLS         float64
+	HealthWeightBIMI        float64
 
 	// Source pattern classification thresholds (S3), percent of a source's messages.
 	PatternHealthyMin       int // both aligned ≥ → healthy
@@ -143,12 +168,20 @@ func Load() Config {
 
 		TLSRPTRequireDKIM: os.Getenv("TLSRPT_REQUIRE_DKIM") != "false",
 
+		AlertBIMIExpiryDays: getenvInt("ALERT_BIMI_EXPIRY_DAYS", 30),
+		BIMIValidate:        os.Getenv("BIMI_VALIDATE") != "false",
+		BIMIRootsPath:       os.Getenv("BIMI_ROOTS_PATH"),
+		BIMIMaxRedirects:    getenvInt("BIMI_MAX_REDIRECTS", 3),
+		BIMIFetchTimeout:    getenvDuration("BIMI_FETCH_TIMEOUT", 15*time.Second),
+		BIMICheckRevocation: os.Getenv("BIMI_CHECK_REVOCATION") == "true",
+
 		HealthWeightPassRate:    getenvFloat("HEALTH_W_PASS_RATE", 40),
 		HealthWeightEnforcement: getenvFloat("HEALTH_W_ENFORCEMENT", 25),
 		HealthWeightSpoof:       getenvFloat("HEALTH_W_SPOOF", 15),
 		HealthWeightCoverage:    getenvFloat("HEALTH_W_COVERAGE", 10),
 		HealthWeightAlerts:      getenvFloat("HEALTH_W_ALERTS", 10),
 		HealthWeightTLS:         getenvFloat("HEALTH_W_TLS", 15),
+		HealthWeightBIMI:        getenvFloat("HEALTH_W_BIMI", 10),
 
 		PatternHealthyMin:       getenvInt("PATTERN_HEALTHY_MIN", 90),
 		PatternForwarderMin:     getenvInt("PATTERN_FORWARDER_MIN", 60),

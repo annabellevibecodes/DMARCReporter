@@ -32,6 +32,16 @@ type Report struct {
 	ImportedAt        int64  `db:"imported_at"`
 	SourceFilename    string `db:"source_filename"`
 	EnvelopeToDomains string `db:"envelope_to_domains"` // comma-separated, populated by ListReports
+
+	// BIMI reporting hygiene (B19). BIMIPresent is 1 when the report carried
+	// a <bimi> element at all, which is the denominator B18 coverage needs;
+	// the rest count rules the report broke or text the parser salvaged.
+	BIMIPresent      int `db:"bimi_present"`
+	BIMIDupTuples    int `db:"bimi_dup_tuples"`
+	BIMIBadCounts    int `db:"bimi_bad_counts"`
+	BIMIUnknownTypes int `db:"bimi_unknown_types"`
+	BIMIMissingAttrs int `db:"bimi_missing_attrs"`
+	MalformedFields  int `db:"malformed_fields"`
 }
 
 // BeginTime returns DateRangeBegin as a UTC time.Time.

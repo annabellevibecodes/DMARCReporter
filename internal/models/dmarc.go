@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/xml"
+	"strconv"
 	"strings"
 )
 
@@ -18,6 +19,13 @@ type Feedback struct {
 	ReportMetadata  ReportMetadata  `xml:"report_metadata"`
 	PolicyPublished PolicyPublished `xml:"policy_published"`
 	Records         []Record        `xml:"record"`
+	// BIMI is the <bimi> element of draft-adams-bimi-reporting-11, a
+	// top-level sibling of <record>. The draft says it SHOULD be last but MAY
+	// appear anywhere, so nothing here depends on ordering.
+	BIMI *BIMIReport `xml:"bimi"`
+	// BIMIHygiene counts what the parser had to tolerate (B19). It is not a
+	// part of the document; see parser.ParseXML.
+	BIMIHygiene BIMIHygiene `xml:"-"`
 }
 
 // Namespace returns the XML namespace of the root element ("" for RFC 7489 reports).
@@ -42,6 +50,58 @@ type ReportMetadata struct {
 type DateRange struct {
 	Begin int64 `xml:"begin"`
 	End   int64 `xml:"end"`
+	// Malformed counts the bounds that had to be salvaged from text that is
+	// not a plain integer. See UnmarshalXML.
+	Malformed int `xml:"-"`
+}
+
+// dateRangeXML mirrors the element with string fields so a malformed bound can
+// be salvaged instead of failing the whole report.
+type dateRangeXML struct {
+	Begin string `xml:"begin"`
+	End   string `xml:"end"`
+}
+
+// UnmarshalXML reads the window, tolerating trailing junk on either bound.
+//
+// This is the one leniency taken outside the BIMI element itself, and it is
+// taken because the reporting draft's own example report carries
+// "<begin>1609459200M</begin>". Refusing the document outright would throw
+// away every record in it over one stray character in its metadata; salvaging
+// the leading digits keeps the data and counts the leniency, which is what
+// Malformed is for. A bound with no digits at all stays zero.
+func (r *DateRange) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	var raw dateRangeXML
+	if err := d.DecodeElement(&raw, &start); err != nil {
+		return err
+	}
+	r.Begin, r.Malformed = salvageUnix(raw.Begin, r.Malformed)
+	r.End, r.Malformed = salvageUnix(raw.End, r.Malformed)
+	return nil
+}
+
+// salvageUnix parses a timestamp, returning the leading integer when the text
+// carries anything else and bumping the malformed count when it does.
+func salvageUnix(text string, malformed int) (int64, int) {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return 0, malformed
+	}
+	if n, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+		return n, malformed
+	}
+	end := 0
+	if end < len(trimmed) && (trimmed[end] == '-' || trimmed[end] == '+') {
+		end++
+	}
+	for end < len(trimmed) && trimmed[end] >= '0' && trimmed[end] <= '9' {
+		end++
+	}
+	n, err := strconv.ParseInt(trimmed[:end], 10, 64)
+	if err != nil {
+		return 0, malformed + 1
+	}
+	return n, malformed + 1
 }
 
 // PolicyPublished is the DMARC policy in effect during the reporting period.

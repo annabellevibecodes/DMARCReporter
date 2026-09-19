@@ -44,6 +44,15 @@ type ReportData struct {
 	TLSReadiness *database.TLSEnforcementReadiness
 	TLSHygiene   *database.TLSHygiene
 	TLSAlerts    []database.Alert // open alerts raised by the TLS rules
+
+	// Brand indicators (B1–B21). Unlike the TLS section these are populated
+	// even when empty: "no domain publishes a BIMI record" is a finding a
+	// management report should state rather than a gap it should leave.
+	BIMIReadiness   *database.BIMIReadinessBreakdown
+	BIMIStates      []database.BIMIDomainState
+	BIMIValidations []database.BIMIValidationState
+	BIMIReporting   *database.BIMIReportingSummary
+	BIMIVerdicts    []database.BIMIReceiverVerdict
 }
 
 // DomainPolicy is one domain's dominant effective policy for the all-domains report.
@@ -162,6 +171,10 @@ func FetchWithOptions(db *sqlx.DB, domain string, from, to int64, periodLabel st
 	}
 
 	if err := fetchTLS(db, rd, domain, from, to, opt.TLSRequireDKIM); err != nil {
+		return nil, err
+	}
+
+	if err := fetchBIMI(db, rd, domain, from, to); err != nil {
 		return nil, err
 	}
 	return rd, nil
@@ -421,3 +434,198 @@ var (
 	newSourceHeaders = []string{"Source IP", "Label / Provider", "Pattern", "Messages", "Pass Rate", "First Seen"}
 	alertHeaders     = []string{"Severity", "Rule", "Domain", "Message", "First Fired", "Last Fired", "Count"}
 )
+
+// fetchBIMI loads the brand-indicator sections (B1–B21).
+//
+// Unlike the TLS section, this is not skipped when there is no data: "no
+// domain publishes a BIMI record" and "no evaluator reports BIMI data" are
+// both findings a management report should state, not gaps it should leave.
+func fetchBIMI(db *sqlx.DB, rd *ReportData, domain string, from, to int64) error {
+	f := database.StatsFilter{Domain: domain, From: from, To: to}
+	var err error
+	if rd.BIMIReadiness, err = database.GetBIMIReadinessBreakdown(db, f); err != nil {
+		return err
+	}
+	if rd.BIMIStates, err = database.ListBIMIDomainStates(db, domain); err != nil {
+		return err
+	}
+	if rd.BIMIValidations, err = database.ListBIMIValidations(db, domain); err != nil {
+		return err
+	}
+	if rd.BIMIReporting, err = database.GetBIMIReportingSummary(db, f); err != nil {
+		return err
+	}
+	if rd.BIMIVerdicts, err = database.SummariseBIMIVerdicts(db, domain, from); err != nil {
+		return err
+	}
+	return nil
+}
+
+// bimiSummaryKV is the BIMI section's headline figures.
+func bimiSummaryKV(rd *ReportData) [][2]string {
+	r := rd.BIMIReadiness
+	if r == nil {
+		return nil
+	}
+	rows := [][2]string{
+		{"BIMI readiness (B10)", fmt.Sprintf(
+			"%d of %d domain(s) would show a logo; %d blocked by policy, %d with a broken logo or certificate, %d with no record",
+			r.Valid, r.Total, r.BlockedByPolicy, r.Broken, r.NoRecord)},
+	}
+	if r.Unchecked > 0 {
+		rows = append(rows, [2]string{"Not yet looked up",
+			fmt.Sprintf("%d domain(s) — counted above as having no record, which may be wrong", r.Unchecked)})
+	}
+	if r.Declined > 0 {
+		rows = append(rows, [2]string{"Declining deliberately", fmt.Sprintf("%d domain(s)", r.Declined)})
+	}
+	if rep := rd.BIMIReporting; rep != nil && rep.Coverage != nil {
+		cov := rep.Coverage
+		if cov.ReportersWith == 0 {
+			rows = append(rows, [2]string{"Reporting coverage (B18)",
+				fmt.Sprintf("none of %d reporter(s) emit BIMI data, so the error figures below say nothing about whether logos are shown", cov.Reporters)})
+		} else {
+			rows = append(rows, [2]string{"Reporting coverage (B18)",
+				fmt.Sprintf("%d of %d reporter(s), %.1f%% of volume", cov.ReportersWith, cov.Reporters, cov.Share)})
+		}
+	}
+	if rep := rd.BIMIReporting; rep != nil && rep.Eligibility != nil {
+		rows = append(rows, [2]string{"BIMI-eligible volume (B11)",
+			fmt.Sprintf("%d of %d message(s) (%.1f%%)",
+				rep.Eligibility.Eligible, rep.Eligibility.Total, rep.Eligibility.Share)})
+	}
+	if rep := rd.BIMIReporting; rep != nil && rep.Impressions != nil && rep.Impressions.Errors > 0 {
+		imp := rep.Impressions
+		note := ""
+		if imp.Over100 {
+			note = " — above 100%, because one message can produce several errors"
+		}
+		rows = append(rows, [2]string{"Estimated failure rate (B20)",
+			fmt.Sprintf("%.1f%% of eligible volume%s (an estimate)", imp.Rate, note)})
+	}
+	return rows
+}
+
+// Column headers for the BIMI tables, shared by every format.
+var (
+	bimiDomainHeaders  = []string{"Domain", "Record", "Policy", "Logo", "Evidence", "Agreement"}
+	bimiErrorHeaders   = []string{"Evaluator", "Domain", "Selector", "Element", "Class", "Type", "Count", "Description"}
+	bimiVerdictHeaders = []string{"Receiver", "Domain", "Selector", "Latest Verdict", "Messages", "Shown"}
+)
+
+// bimiDomainRows renders each domain's configuration (B1, B2, B4, B6–B10).
+func bimiDomainRows(rd *ReportData) [][]string {
+	if len(rd.BIMIStates) == 0 {
+		return nil
+	}
+	validation := map[string]database.BIMIValidationState{}
+	for _, v := range rd.BIMIValidations {
+		if v.Selector == "default" {
+			validation[v.Domain] = v
+		}
+	}
+	rows := make([][]string, 0, len(rd.BIMIStates))
+	for _, s := range rd.BIMIStates {
+		if s.Selector != "default" {
+			continue
+		}
+		logo, evidence, agreement := "not checked", "none published", "—"
+		if s.Result.Record.Authority != "" {
+			evidence = "not checked"
+		}
+		if v, ok := validation[s.Domain]; ok && v.Checked() {
+			logo = "ok"
+			if !v.Valid() {
+				logo = "problems"
+			}
+			if v.Evidence != nil {
+				evidence = fmt.Sprintf("%d day(s) left", v.Evidence.DaysToExpiry)
+			}
+			switch {
+			case !v.Agreement.Checked:
+				agreement = "n/a"
+			case v.Agreement.Matches:
+				agreement = "agrees"
+			default:
+				agreement = "disagrees"
+			}
+		}
+		policy := "unknown"
+		if rd.BIMIReporting != nil && rd.BIMIReporting.Eligibility != nil {
+			for _, d := range rd.BIMIReporting.Eligibility.Domains {
+				if d.Domain == s.Domain {
+					policy = "blocked"
+					if d.Eligible > 0 {
+						policy = "eligible"
+					}
+					break
+				}
+			}
+		}
+		rows = append(rows, []string{
+			escapeFormula(s.Domain), s.State, policy, logo, evidence, agreement,
+		})
+	}
+	return rows
+}
+
+// bimiErrorRows renders the errors evaluators reported (B12).
+//
+// Every field here comes from a third party's XML — the evaluator chose the
+// description text — so all of them are escaped before they reach a
+// spreadsheet, not just the ones that look risky.
+func bimiErrorRows(rd *ReportData) [][]string {
+	if rd.BIMIReporting == nil || len(rd.BIMIReporting.Errors) == 0 {
+		return nil
+	}
+	rows := make([][]string, 0, len(rd.BIMIReporting.Errors))
+	for _, e := range rd.BIMIReporting.Errors {
+		rows = append(rows, []string{
+			escapeFormula(e.OrgName), escapeFormula(e.Domain), escapeFormula(e.Selector),
+			escapeFormula(e.Element), escapeFormula(e.Class), escapeFormula(e.Type),
+			fmt.Sprintf("%d", e.Count), escapeFormula(truncateText(e.Description, 200)),
+		})
+	}
+	return rows
+}
+
+// bimiVerdictRows renders what receivers did with seed mail (B21).
+func bimiVerdictRows(rd *ReportData) [][]string {
+	if len(rd.BIMIVerdicts) == 0 {
+		return nil
+	}
+	rows := make([][]string, 0, len(rd.BIMIVerdicts))
+	for _, v := range rd.BIMIVerdicts {
+		verdict := v.LastResult
+		if v.LastComment != "" {
+			verdict += " (" + truncateText(v.LastComment, 120) + ")"
+		}
+		rows = append(rows, []string{
+			escapeFormula(v.Receiver), escapeFormula(v.FromDomain), escapeFormula(v.Selector),
+			escapeFormula(verdict), fmt.Sprintf("%d", v.Messages), fmt.Sprintf("%.0f%%", v.PassRate),
+		})
+	}
+	return rows
+}
+
+// truncateText caps free text supplied by a third party.
+func truncateText(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
+// trimColumns drops trailing columns so a wide table fits a narrower rendering
+// without the renderer having to know which columns it lost.
+func trimColumns(rows [][]string, n int) [][]string {
+	out := make([][]string, 0, len(rows))
+	for _, r := range rows {
+		if len(r) > n {
+			r = r[:n]
+		}
+		out = append(out, r)
+	}
+	return out
+}

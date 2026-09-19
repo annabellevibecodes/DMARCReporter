@@ -27,6 +27,10 @@
   var tlsBar        = document.getElementById('tls-bar');
   var tlsCounter    = document.getElementById('tls-counter');
   var tlsLog        = document.getElementById('tls-log');
+  var bimiSection   = document.getElementById('bimi-section');
+  var bimiBar       = document.getElementById('bimi-bar');
+  var bimiCounter   = document.getElementById('bimi-counter');
+  var bimiLog       = document.getElementById('bimi-log');
   var doneBanner    = document.getElementById('done-banner');
   var progressTitle = document.getElementById('progress-title');
   var btn           = document.getElementById('start-btn');
@@ -68,6 +72,14 @@
     tlsCounter.textContent = done + ' / ' + total;
   }
 
+  function showBIMIProgress(done, total) {
+    if (!bimiSection) return;
+    bimiSection.style.display = '';
+    bimiBar.max = total || 1;
+    bimiBar.value = done;
+    bimiCounter.textContent = done + ' / ' + total;
+  }
+
   function showError(message) {
     progressTitle.textContent = 'Error';
     doneBanner.style.display = '';
@@ -77,7 +89,7 @@
     if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
   }
 
-  function showDone(ips, domains, spf, tls) {
+  function showDone(ips, domains, spf, tls, bimi) {
     progressTitle.textContent = 'Complete';
     doneBanner.style.display = '';
     var suffix = '.';
@@ -85,6 +97,7 @@
       suffix = ' — ' + ips + ' IP(s) resolved, ' + domains + ' domain(s) checked';
       if (typeof spf === 'number') suffix += ', ' + spf + ' SPF record(s) expanded';
       if (typeof tls === 'number') suffix += ', ' + tls + ' domain(s) TLS-checked';
+      if (typeof bimi === 'number') suffix += ', ' + bimi + ' BIMI record(s) checked';
       suffix += '.';
     }
     doneBanner.textContent = '✓ Enrichment complete' + suffix;
@@ -115,12 +128,16 @@
         showSPFProgress(d.spf_done, d.spf_total);
         if (d.spf_done > 0) appendLog(spfLog, '… resuming (earlier items not shown)');
       }
+      if (d.bimi_total > 0) {
+        showBIMIProgress(d.bimi_done, d.bimi_total);
+        if (d.bimi_done > 0) appendLog(bimiLog, '… resuming (earlier items not shown)');
+      }
       if (!d.running) {
         es.close();
         if (d.error) {
           showError(d.error);
-        } else if (d.ip_total > 0 || d.domain_total > 0 || d.spf_total > 0 || d.tls_total > 0) {
-          showDone(d.ip_total, d.domain_total, d.spf_total, d.tls_total);
+        } else if (d.ip_total > 0 || d.domain_total > 0 || d.spf_total > 0 || d.tls_total > 0 || d.bimi_total > 0) {
+          showDone(d.ip_total, d.domain_total, d.spf_total, d.tls_total, d.bimi_total);
         }
       }
     });
@@ -153,6 +170,13 @@
         showTLSProgress(d.done, d.total);
         appendLog(tlsLog, (d.changed > 0 ? '~' : '·') + ' ' + d.domain + ' — ' + d.summary +
           (d.changed > 0 ? ' (' + d.changed + ' change(s))' : ''));
+      } else if (d.type === 'bimi_start') {
+        showBIMIProgress(0, d.total);
+        if (d.total === 0) appendLog(bimiLog, '(nothing to check)');
+      } else if (d.type === 'bimi') {
+        showBIMIProgress(d.done, d.total);
+        appendLog(bimiLog, (d.changed > 0 ? '~' : '·') + ' ' + d.domain + ' — ' + d.summary +
+          (d.changed > 0 ? ' (' + d.changed + ' change(s))' : ''));
       } else if (d.type === 'spf_start') {
         showSPFProgress(0, d.total);
         if (d.total === 0) appendLog(spfLog, '(nothing to expand)');
@@ -166,7 +190,7 @@
     es.addEventListener('done', function (e) {
       es.close();
       var d = JSON.parse(e.data);
-      showDone(d.ips, d.domains, d.spf, d.tls);
+      showDone(d.ips, d.domains, d.spf, d.tls, d.bimi);
     });
 
     es.addEventListener('error', function (e) {
@@ -186,10 +210,13 @@
     var spfTotal    = parseInt(progressSection.dataset.spfTotal, 10) || 0;
     var tlsDone     = parseInt(progressSection.dataset.tlsDone, 10) || 0;
     var tlsTotal    = parseInt(progressSection.dataset.tlsTotal, 10) || 0;
+    var bimiDone    = parseInt(progressSection.dataset.bimiDone, 10) || 0;
+    var bimiTotal   = parseInt(progressSection.dataset.bimiTotal, 10) || 0;
     if (ipTotal > 0) showIPProgress(ipDone, ipTotal);
     if (domainTotal > 0) showDomainProgress(domainDone, domainTotal);
     if (spfTotal > 0) showSPFProgress(spfDone, spfTotal);
     if (tlsTotal > 0) showTLSProgress(tlsDone, tlsTotal);
+    if (bimiTotal > 0) showBIMIProgress(bimiDone, bimiTotal);
     connect();
   }
 }());

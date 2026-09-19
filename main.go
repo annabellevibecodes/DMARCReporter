@@ -126,7 +126,7 @@ func main() {
 
 	app.Static("/static", "./static")
 
-	a := &handlers.App{DB: db, Cfg: cfg, Worker: worker, EnrichWorker: handlers.NewEnrichWorker(db)}
+	a := &handlers.App{DB: db, Cfg: cfg, Worker: worker, EnrichWorker: handlers.NewEnrichWorker(db, cfg)}
 	// Keep DMARC/BIMI/MTA-STS DNS checks fresh without blocking page loads.
 	a.StartDomainCheckRefresher(6 * time.Hour)
 	// Time-based alert rules (silent reporters, missing selectors, …) need a
@@ -174,6 +174,7 @@ func main() {
 	app.Get("/oauth/google/callback", accountLimiter, a.HandleGoogleCallback)
 
 	app.Get("/tlsrpt", a.HandleTLSRPTList)
+	app.Get("/bimi", a.HandleBIMIPage)
 	app.Get("/enrich", a.HandleEnrichPage)
 	// /enrich/start triggers the background run; it is rate-limited since it
 	// mutates state. /enrich/stream only observes the run (any number of tabs
@@ -218,6 +219,7 @@ func main() {
 	app.Get("/api/policy", apiLimiter, a.HandleAPIPolicy)
 	app.Post("/api/selectors/expected", apiLimiter, a.HandleAPISelectorExpected)
 	app.Get("/api/reporters", apiLimiter, a.HandleAPIReporters)
+	app.Get("/api/bimi", apiLimiter, a.HandleAPIBIMI)
 	app.Get("/api/tls", apiLimiter, a.HandleAPITLS)
 	app.Get("/api/tls/failures", apiLimiter, a.HandleAPITLSFailures)
 	app.Get("/api/tls/policies", apiLimiter, a.HandleAPITLSPolicies)

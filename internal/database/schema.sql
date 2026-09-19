@@ -32,6 +32,13 @@ CREATE TABLE IF NOT EXISTS reports (
     sp_present          INTEGER NOT NULL DEFAULT 0,    -- 1 when <sp> was in the XML
     pct_present         INTEGER NOT NULL DEFAULT 0,    -- 1 when <pct> was in the XML
     fo_present          INTEGER NOT NULL DEFAULT 0,    -- 1 when <fo> was in the XML
+    -- BIMI reporting hygiene (B19); see db.go (reportColumns).
+    bimi_present        INTEGER NOT NULL DEFAULT 0,    -- 1 when the report carried a <bimi> element
+    bimi_dup_tuples     INTEGER NOT NULL DEFAULT 0,
+    bimi_bad_counts     INTEGER NOT NULL DEFAULT 0,
+    bimi_unknown_types  INTEGER NOT NULL DEFAULT 0,
+    bimi_missing_attrs  INTEGER NOT NULL DEFAULT 0,
+    malformed_fields    INTEGER NOT NULL DEFAULT 0,    -- values salvaged from malformed text
     UNIQUE (org_name, report_id)
 );
 
@@ -107,7 +114,14 @@ CREATE TABLE IF NOT EXISTS domain_checks (
     has_dmarc   INTEGER NOT NULL DEFAULT 0,
     has_bimi    INTEGER NOT NULL DEFAULT 0,
     has_mta_sts INTEGER NOT NULL DEFAULT 0,
-    checked_at  INTEGER NOT NULL DEFAULT 0
+    checked_at  INTEGER NOT NULL DEFAULT 0,
+    -- The records as published, stored so the domain page can show them
+    -- without resolving DNS on the request path. See db.go
+    -- (domainCheckColumns).
+    dmarc_record   TEXT NOT NULL DEFAULT '',
+    dmarc_error    TEXT NOT NULL DEFAULT '',
+    mta_sts_record TEXT NOT NULL DEFAULT '',
+    mta_sts_error  TEXT NOT NULL DEFAULT ''
 );
 
 -- Cache for reverse DNS and WHOIS lookups.
@@ -142,7 +156,11 @@ CREATE TABLE IF NOT EXISTS accounts (
     last_fetch_at       INTEGER NOT NULL DEFAULT 0,
     last_fetch_status   TEXT    NOT NULL DEFAULT '',          -- '', 'ok', 'error', 'running'
     last_fetch_detail   TEXT    NOT NULL DEFAULT '',
-    last_fetch_imported INTEGER NOT NULL DEFAULT 0
+    last_fetch_imported INTEGER NOT NULL DEFAULT 0,
+    -- purpose: report (a mailbox receiving DMARC/TLS reports) or seed (a
+    -- mailbox receiving the operator's own mail, read for BIMI verdicts).
+    -- See db.go (accountColumns).
+    purpose             TEXT    NOT NULL DEFAULT 'report'
 );
 
 -- UIDs already examined (and found to carry no report attachments), so
@@ -371,3 +389,114 @@ CREATE TABLE IF NOT EXISTS tls_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_tls_snapshots_lookup ON tls_snapshots(domain, kind, host, last_seen);
 CREATE INDEX IF NOT EXISTS idx_tls_snapshots_kind   ON tls_snapshots(kind, last_seen);
+
+-- Observed states of a domain's BIMI configuration: the assertion record, and
+-- (from the active-validation phase) the indicator served at l= and the
+-- evidence document at a=.
+--
+-- One row per distinct state, not per check: re-observing the same content
+-- bumps last_seen and checks, and a change inserts a new row. Modelled on
+-- tls_snapshots for the same reason — B5 and the change-log view need a change
+-- log, not a row per Enrich run.
+CREATE TABLE IF NOT EXISTS bimi_snapshots (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain     TEXT    NOT NULL,
+    selector   TEXT    NOT NULL DEFAULT 'default',
+    kind       TEXT    NOT NULL,              -- record | indicator | evidence
+    content    TEXT    NOT NULL DEFAULT '',   -- TXT string, SVG sha256, or cert fingerprint
+    detail     TEXT    NOT NULL DEFAULT '{}', -- JSON of the parsed fields
+    error      TEXT    NOT NULL DEFAULT '',
+    first_seen INTEGER NOT NULL,
+    last_seen  INTEGER NOT NULL,
+    checks     INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_bimi_snapshots_lookup
+    ON bimi_snapshots(domain, selector, kind, last_seen);
+CREATE INDEX IF NOT EXISTS idx_bimi_snapshots_kind
+    ON bimi_snapshots(kind, last_seen);
+
+-- BIMI selector inventory, mirroring the DKIM `selectors` table above.
+-- source: published (found in DNS) | reported (echoed by an evaluator) | lps.
+-- expected: -1 unset, 0 no, 1 yes.
+CREATE TABLE IF NOT EXISTS bimi_selectors (
+    domain     TEXT    NOT NULL,
+    selector   TEXT    NOT NULL,
+    source     TEXT    NOT NULL DEFAULT 'published',
+    first_seen INTEGER NOT NULL DEFAULT 0,
+    last_seen  INTEGER NOT NULL DEFAULT 0,
+    expected   INTEGER NOT NULL DEFAULT -1,
+    PRIMARY KEY (domain, selector)
+);
+
+-- One row per <assertion> element of a report's <bimi> element
+-- (draft-adams-bimi-reporting-11 §3.2).
+--
+-- Rows with no matching bimi_errors rows are the only success signal the
+-- reporting schema emits: §3.4 says the <errors> element MUST NOT exist when
+-- there were no errors, so an error-free assertion is how an evaluator says
+-- "this configuration worked". Never prune them.
+CREATE TABLE IF NOT EXISTS bimi_assertions (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_id        INTEGER NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+    aligned_domain   TEXT    NOT NULL DEFAULT '',
+    assertion_domain TEXT    NOT NULL DEFAULT '',
+    selector         TEXT    NOT NULL DEFAULT 'default',
+    l_value          TEXT    NOT NULL DEFAULT '',  -- 'unpublished' is a magic value, not a URI
+    a_value          TEXT    NOT NULL DEFAULT '',
+    evidence_present INTEGER NOT NULL DEFAULT 0,   -- 1 when an <evidence> element was there
+    evidence_date    INTEGER NOT NULL DEFAULT 0,   -- parsed RFC 5322 date; 0 when absent
+    evidence_date_raw TEXT   NOT NULL DEFAULT '',  -- kept verbatim, parsed or not
+    evidence_issuer  TEXT    NOT NULL DEFAULT '',
+    evidence_type    TEXT    NOT NULL DEFAULT '',
+    evidence_url     TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_bimi_assertions_report ON bimi_assertions(report_id);
+CREATE INDEX IF NOT EXISTS idx_bimi_assertions_domain ON bimi_assertions(aligned_domain);
+
+-- One row per ERROR-NAME:class:type tuple, the aggregation unit §3.4 defines.
+-- count is the reporter's own aggregate for the whole reporting period, and
+-- cannot be attributed to a source IP or a message.
+CREATE TABLE IF NOT EXISTS bimi_errors (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    assertion_id INTEGER NOT NULL REFERENCES bimi_assertions(id) ON DELETE CASCADE,
+    element      TEXT    NOT NULL DEFAULT '',  -- assertion | evidence | indicator | undefined
+    class        TEXT    NOT NULL DEFAULT '',  -- temp | perm
+    type         TEXT    NOT NULL DEFAULT '',  -- '' for undefined
+    description  TEXT    NOT NULL DEFAULT '',
+    count        INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_bimi_errors_assertion ON bimi_errors(assertion_id);
+CREATE INDEX IF NOT EXISTS idx_bimi_errors_tuple     ON bimi_errors(element, class, type);
+
+-- BIMI verdicts observed on seed mail (B21): the bimi= result a real receiver
+-- stamped into Authentication-Results on a message the operator sent to a
+-- mailbox they control.
+--
+-- This is the only table in the application that records what a person would
+-- actually have seen. It is also the narrowest: it says nothing about mail
+-- that was not sent to a seed address.
+CREATE TABLE IF NOT EXISTS bimi_verdicts (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id     INTEGER NOT NULL DEFAULT 0,
+    message_id     TEXT    NOT NULL DEFAULT '',   -- RFC 5322 Message-ID, for dedupe
+    at             INTEGER NOT NULL DEFAULT 0,    -- the message's Date header
+    receiver       TEXT    NOT NULL DEFAULT '',   -- authserv-id that evaluated it
+    from_domain    TEXT    NOT NULL DEFAULT '',   -- RFC5322.From domain of the seed message
+    selector       TEXT    NOT NULL DEFAULT '',
+    result         TEXT    NOT NULL DEFAULT '',   -- pass|none|fail|temperror|declined|skipped
+    comment        TEXT    NOT NULL DEFAULT '',
+    authority      TEXT    NOT NULL DEFAULT '',   -- policy.authority
+    authority_uri  TEXT    NOT NULL DEFAULT '',
+    indicator_uri  TEXT    NOT NULL DEFAULT '',
+    indicator_hash TEXT    NOT NULL DEFAULT '',   -- truncated SHA-256 suffix
+    has_indicator  INTEGER NOT NULL DEFAULT 0,    -- a BIMI-Indicator header was present
+    matched        INTEGER NOT NULL DEFAULT -1,   -- -1 unknown, 0 no, 1 yes
+    raw_ar         TEXT    NOT NULL DEFAULT '',
+    UNIQUE (message_id, receiver)
+);
+
+CREATE INDEX IF NOT EXISTS idx_bimi_verdicts_domain ON bimi_verdicts(from_domain, at);
+CREATE INDEX IF NOT EXISTS idx_bimi_verdicts_at     ON bimi_verdicts(at);

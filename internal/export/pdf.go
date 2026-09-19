@@ -243,6 +243,52 @@ func WritePDF(w io.Writer, rd *ReportData) error {
 		pdfKVTable(pdf, [][2]string{{"TLS reports", "none for this period"}})
 	}
 
+	// Brand indicators.
+	pdf.Ln(6)
+	pdfSectionHeader(pdf, "BIMI (Brand Indicators)")
+	if kv := bimiSummaryKV(rd); len(kv) > 0 {
+		pdfKVTable(pdf, kv)
+	} else {
+		pdfKVTable(pdf, [][2]string{{"BIMI", "no domains checked for this period"}})
+	}
+	if rows := bimiDomainRows(rd); len(rows) > 0 {
+		pdf.Ln(4)
+		pdfSectionHeader(pdf, "BIMI Configuration by Domain")
+		pdfTable(pdf, []pdfCol{
+			{Header: "Domain", Width: 46, Align: "L"},
+			{Header: "Record", Width: 24, Align: "L"},
+			{Header: "Policy", Width: 24, Align: "L"},
+			{Header: "Logo", Width: 24, Align: "L"},
+			{Header: "Evidence", Width: 32, Align: "L"},
+			{Header: "Agreement", Width: 25, Align: "L"},
+		}, rows)
+	}
+	if rows := bimiErrorRows(rd); len(rows) > 0 {
+		pdf.Ln(4)
+		pdfSectionHeader(pdf, "BIMI Errors Reported by Evaluators")
+		pdfTable(pdf, []pdfCol{
+			{Header: "Evaluator", Width: 34, Align: "L"},
+			{Header: "Domain", Width: 34, Align: "L"},
+			{Header: "Selector", Width: 22, Align: "L"},
+			{Header: "Element", Width: 24, Align: "L"},
+			{Header: "Class", Width: 18, Align: "L"},
+			{Header: "Type", Width: 24, Align: "L"},
+			{Header: "Count", Width: 19, Align: "R"},
+		}, trimColumns(rows, 7))
+	}
+	if rows := bimiVerdictRows(rd); len(rows) > 0 {
+		pdf.Ln(4)
+		pdfSectionHeader(pdf, "BIMI Verdicts on Seed Mail")
+		pdfTable(pdf, []pdfCol{
+			{Header: "Receiver", Width: 44, Align: "L"},
+			{Header: "Domain", Width: 40, Align: "L"},
+			{Header: "Selector", Width: 22, Align: "L"},
+			{Header: "Latest", Width: 45, Align: "L"},
+			{Header: "Msgs", Width: 16, Align: "R"},
+			{Header: "Shown", Width: 18, Align: "R"},
+		}, rows)
+	}
+
 	if rows := alertRows(rd); len(rows) > 0 {
 		pdf.Ln(6)
 		pdfSectionHeader(pdf, "Open Alerts")

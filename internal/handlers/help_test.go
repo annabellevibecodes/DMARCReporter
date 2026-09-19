@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	htmlengine "github.com/gofiber/template/html/v2"
 
+	"github.com/annabellevibecodes/dmarcreporter/internal/config"
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
 	"github.com/annabellevibecodes/dmarcreporter/internal/metrics"
 )
@@ -28,7 +29,7 @@ func helpTestApp(t *testing.T) *fiber.App {
 		t.Fatalf("load views: %v", err)
 	}
 	app := fiber.New(fiber.Config{Views: engine, ErrorHandler: ErrorHandler})
-	a := &App{DB: db, EnrichWorker: NewEnrichWorker(db)}
+	a := &App{DB: db, EnrichWorker: NewEnrichWorker(db, config.Config{})}
 	app.Get("/help", a.HandleHelpPage)
 	app.Get("/help/:section", a.HandleHelpPage)
 	return app

@@ -12,6 +12,7 @@
   <a href="#policy">P1–P6 Policy</a> &middot;
   <a href="#reporters">R1–R8 Reporters</a> &middot;
   <a href="#tls">T1–T15 TLS</a> &middot;
+  <a href="#bimi">B1–B21 BIMI</a> &middot;
   <a href="#windows">Windows &amp; comparisons</a>
 </nav>
 
@@ -33,6 +34,7 @@
       <tr><td><strong>P</strong> — Policy</td><td>Your published DMARC record as reporters actually saw it</td><td>Domain detail</td></tr>
       <tr><td><strong>R</strong> — Reporters</td><td>Who sends you reports, how promptly, and report hygiene</td><td><a href="/reporters">Reporters</a></td></tr>
       <tr><td><strong>T</strong> — TLS</td><td>SMTP TLS reporting (RFC 8460): session success, the policy applied, and why connections failed</td><td><a href="/tlsrpt">TLS reports</a></td></tr>
+      <tr><td><strong>B</strong> — BIMI</td><td>Brand indicator configuration, validation, and how evaluators judged it</td><td><a href="/bimi">BIMI</a>, domain detail</td></tr>
       <tr><td><strong>X</strong> — Alerts</td><td>The rules that raise alerts — see <a href="/help/alerts">Alerts &amp; health</a></td><td><a href="/alerts">Alerts</a></td></tr>
     </tbody>
   </table>
@@ -336,6 +338,94 @@
     T13 counts how many were held back. Reports uploaded through the web form have no carrying
     message and are never excluded by that rule.
   </p>
+</article>
+
+<!-- BIMI -->
+<article class="help-chapter" id="bimi">
+  <header><h2>B1–B21 — BIMI</h2></header>
+  <p>
+    BIMI (Brand Indicators for Message Identification) is the standard that lets a receiver show
+    your logo beside your mail. It is layered on top of DMARC: nothing about BIMI applies to a
+    domain whose DMARC policy is not already at enforcement. The
+    <a href="/bimi">BIMI page</a> shows all of this across every domain; see
+    <a href="/help/standards">Related standards</a> for what the records look like.
+  </p>
+  <p>
+    The B series answers a different question from the older &ldquo;BIMI coverage&rdquo; figure,
+    which only counted whether a record exists. A domain can publish a syntactically perfect record
+    and still never show a logo &mdash; because the policy does not qualify, because the logo at
+    <code>l=</code> cannot be fetched or is not valid SVG Tiny P/S, because the certificate at
+    <code>a=</code> has expired, or because the receiver simply declined it.
+  </p>
+  <h3>Three independent sources</h3>
+  <p>
+    <strong>B1&ndash;B10 need no cooperation from anyone.</strong> They come from your own DNS
+    records and from fetching the documents those records point at, so they are available for every
+    managed domain from the first Enrich run.
+  </p>
+  <p>
+    <strong>B11&ndash;B20 come from the <code>&lt;bimi&gt;</code> element in DMARC aggregate
+    reports</strong> &mdash; the evaluator's own account of what it saw and why it refused. Very few
+    reporters emit it today, which is exactly what B18 measures: treat an empty B12 as
+    &ldquo;nobody told us&rdquo;, never as &ldquo;nothing is wrong&rdquo;.
+  </p>
+  <p>
+    <strong>B21 comes from seed mail</strong>: the <code>bimi=</code> result a real receiver stamped
+    into <code>Authentication-Results</code> on a message you sent to a mailbox you control. It is
+    the only source that reports what a person would actually have seen, and it says nothing about
+    mail you did not send to that address.
+  </p>
+  <p style="color:var(--pico-muted-color);">
+    The series is being built out in phases. Identifiers below that are not yet wired to a panel are
+    listed here so the numbering is stable and so nothing is quietly renumbered later.
+  </p>
+  <table>
+    <thead><tr><th style="white-space:nowrap;">ID</th><th>Metric</th><th>What it measures</th></tr></thead>
+    <tbody>
+      <tr><td><code>B1</code></td><td>BIMI inventory</td>
+          <td>Every managed domain's published record, per selector: the <code>l=</code> logo URI, the <code>a=</code> evidence URI, <code>avp=</code>, <code>lps=</code>, or an explicit declination to publish. Also which domain the record was actually found at, since a subdomain inherits from its organizational domain.</td></tr>
+      <tr><td><code>B2</code></td><td>Record validity</td>
+          <td>Tag syntax judged as the spec requires it rather than as a tolerant parser would read it: <code>v=BIMI1</code> present and first, URIs HTTPS-only and carrying a fully qualified host, tags outside the registry, and the difference between a tag that is empty and a tag that is absent.</td></tr>
+      <tr><td><code>B3</code></td><td>BIMI selector inventory</td>
+          <td>Every selector seen for a domain &mdash; found in DNS, echoed back by an evaluator, or implied by an <code>lps=</code> prefix list &mdash; with first seen, last seen and your own expected flag, exactly as the DKIM selector inventory (<a href="#auth">A1</a>) works.</td></tr>
+      <tr><td><code>B4</code></td><td>Declination and avatar preference</td>
+          <td>Records that deliberately decline to publish an indicator (<code>l=</code> and <code>a=</code> both present and empty), and the <code>avp=</code> preference for a personal avatar over the brand mark. Both are choices, not faults, and are counted apart from &ldquo;no record&rdquo;.</td></tr>
+      <tr><td><code>B5</code></td><td>BIMI change log</td>
+          <td>Each observed change of the record, the indicator served at <code>l=</code> or the evidence document at <code>a=</code>, with what changed and when. One row per distinct observed state, not one per check, so a stable configuration stays a single row however often it is polled.</td></tr>
+      <tr><td><code>B6</code></td><td>Indicator endpoint health</td>
+          <td>What actually happens when the logo at <code>l=</code> is fetched: HTTP status, how many redirects, whether the TLS chain validates, the byte size, and the declared content type. A logo nobody can retrieve is never shown, and nothing else in the B series will tell you that.</td></tr>
+      <tr><td><code>B7</code></td><td>SVG P/S conformance</td>
+          <td>Whether the retrieved indicator validates against the SVG Tiny Portable/Secure profile, reported as a list of named findings rather than one pass/fail, so an unimplemented check is visibly absent instead of silently passing.</td></tr>
+      <tr><td><code>B8</code></td><td>Evidence document health</td>
+          <td>The certificate at <code>a=</code>: whether it chains to a trusted mark-verifying root, how many days of runway remain before it expires, whether it has been revoked, and which domains its subject alternative names actually cover.</td></tr>
+      <tr><td><code>B9</code></td><td>Indicator and evidence agreement</td>
+          <td>Whether the mark embedded in the evidence document is byte-identical to the mark served at <code>l=</code>, which the spec requires the receiver to check. A mismatch is the most user-visible BIMI failure there is and is invisible to every other check here.</td></tr>
+      <tr><td><code>B10</code></td><td>BIMI readiness</td>
+          <td>Whether a domain's DMARC policy would permit BIMI at all, before anything about logos is considered: the policy at enforcement and at full effect, and no subdomain policy weakening it. A domain that fails this cannot show a logo no matter how good its record is.</td></tr>
+      <tr><td><code>B11</code></td><td>BIMI-eligible volume</td>
+          <td>Messages that met the authentication preconditions in the reporting window. This is the denominator every other BIMI rate is built on &mdash; a failure count means nothing without it.</td></tr>
+      <tr><td><code>B12</code></td><td>Reported errors</td>
+          <td>Error volume as evaluators reported it, by the element that failed (assertion, evidence or indicator), by class (temporary or permanent) and by error type, broken down per evaluator, domain and selector.</td></tr>
+      <tr><td><code>B13</code></td><td>Permanent error share</td>
+          <td>The share of reported errors an evaluator classed permanent. The distinction matters operationally: a permanent error entitles the evaluator to stop evaluating your domain altogether rather than retry it.</td></tr>
+      <tr><td><code>B14</code></td><td>Configuration as evaluators saw it</td>
+          <td>The <code>l=</code>, <code>a=</code> and selector each evaluator echoed back, diffed against what you publish. Evaluators disagreeing with each other inside one window is DNS inconsistency; all of them disagreeing with your current record is propagation lag.</td></tr>
+      <tr><td><code>B15</code></td><td>Evidence freshness</td>
+          <td>How stale each evaluator's cached evaluation of your evidence document is, from the evaluation date it reports. A rotated certificate that an evaluator has not re-fetched explains failures that your own checks say are fixed.</td></tr>
+      <tr><td><code>B16</code></td><td>Evaluator policy rejections</td>
+          <td>Evidence that validated technically and was declined anyway. This is the one category no change of yours will fix: it is the receiver's own policy decision, and it is worth separating from your defects.</td></tr>
+      <tr><td><code>B17</code></td><td>Evaluator divergence</td>
+          <td>One configuration, different verdicts. Where evaluators agree, the problem is yours; where one refuses what the others accept, the difference is that receiver's strictness, and the fix is a different conversation.</td></tr>
+      <tr><td><code>B18</code></td><td>BIMI reporting coverage</td>
+          <td>Share of your volume that came from reporters emitting BIMI data at all, and so how representative B12&ndash;B17 are. Adoption is currently close to zero, which is the point: this number is what stops the others being over-read.</td></tr>
+      <tr><td><code>B19</code></td><td>BIMI hygiene</td>
+          <td>Everything that makes the BIMI numbers less trustworthy: duplicate tuples the spec forbids, non-positive counts, error types outside the registry, and missing required attributes. Every leniency taken while parsing increments a counter here.</td></tr>
+      <tr><td><code>B20</code></td><td>Estimated impressions</td>
+          <td>Eligible volume set against observed failure, expressed as impressions shown and impressions lost. An estimate and labelled as one: a single message can produce several errors, so a naive rate can exceed 100% and is shown rather than clamped.</td></tr>
+      <tr><td><code>B21</code></td><td>Observed verdicts</td>
+          <td>The <code>bimi=</code> result real receivers stamped on seed mail, with the authority status, the selector used, and whether the indicator hash they recorded matches the one you serve. Opt-in, and only as broad as the seed addresses you send to.</td></tr>
+    </tbody>
+  </table>
 </article>
 
 <!-- Windows -->

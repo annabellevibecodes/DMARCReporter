@@ -32,7 +32,7 @@ func tlsTestApp(t *testing.T, requireDKIM bool) (*fiber.App, *sqlx.DB) {
 		t.Fatalf("load views: %v", err)
 	}
 	app := fiber.New(fiber.Config{Views: engine, ErrorHandler: ErrorHandler})
-	a := &App{DB: db, EnrichWorker: NewEnrichWorker(db), Cfg: config.Config{TLSRPTRequireDKIM: requireDKIM}}
+	a := &App{DB: db, EnrichWorker: NewEnrichWorker(db, config.Config{}), Cfg: config.Config{TLSRPTRequireDKIM: requireDKIM}}
 	app.Get("/tlsrpt", a.HandleTLSRPTList)
 	app.Get("/tlsrpt/:id", a.HandleTLSRPTDetail)
 	return app, db

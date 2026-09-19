@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/template/html/v2"
 
+	"github.com/annabellevibecodes/dmarcreporter/internal/config"
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
 	"github.com/annabellevibecodes/dmarcreporter/internal/models"
 )
@@ -60,7 +61,7 @@ func sourcesTestApp(t *testing.T) *fiber.App {
 		t.Fatalf("load views: %v", err)
 	}
 	app := fiber.New(fiber.Config{Views: engine, ErrorHandler: ErrorHandler})
-	a := &App{DB: db, EnrichWorker: NewEnrichWorker(db)}
+	a := &App{DB: db, EnrichWorker: NewEnrichWorker(db, config.Config{})}
 	app.Get("/sources", a.HandleSourcesList)
 	return app
 }

@@ -13,6 +13,7 @@
         <a href="/reporters" style="color:#6b5e3c;text-decoration:none;font-style:italic;">Reporters</a>
         <a href="/alerts" style="color:#6b5e3c;text-decoration:none;font-style:italic;">Alerts</a>
         <a href="/tlsrpt"   style="color:#6b5e3c;text-decoration:none;font-style:italic;">TLS</a>
+        <a href="/bimi"     style="color:#6b5e3c;text-decoration:none;font-style:italic;">BIMI</a>
         <a href="/accounts" style="color:#6b5e3c;text-decoration:none;font-style:italic;">Accounts</a>
         <a href="/help"     style="color:#6b5e3c;text-decoration:none;font-style:italic;">Help</a>
         <a href="/upload"   style="color:#0e2a4a;text-decoration:none;font-style:normal;font-weight:600;">Upload &#8599;</a>
@@ -349,8 +350,8 @@
 
       <!-- § X BIMI Coverage -->
       <div style="border:1px solid #0e2a4a;padding:10px 14px;background:#fbf6ec;">
-        <div style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:16px;color:#0e2a4a;margin-bottom:6px;">BIMI Coverage</div>
-        <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:11px;color:#6b5e3c;margin-bottom:8px;">Domains with a BIMI record configured.</div>
+        <div style="font-family:'Cormorant Garamond',serif;font-weight:600;font-size:16px;color:#0e2a4a;margin-bottom:6px;">BIMI Readiness</div>
+        <div style="font-family:'Source Serif 4',serif;font-style:italic;font-size:11px;color:#6b5e3c;margin-bottom:8px;">Whether a logo would actually be shown, not whether a record exists.{{with .BIMIReadiness}}{{if gt .Unchecked 0}} {{.Unchecked}} domain(s) not yet looked up.{{end}}{{end}}</div>
         <div style="position:relative;height:160px;"><canvas id="bimi-pie-chart"></canvas></div>
         <script type="application/json" id="bimi-pie-data">{{.BIMIPieData}}</script>
       </div>

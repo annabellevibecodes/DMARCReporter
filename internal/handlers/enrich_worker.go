@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/annabellevibecodes/dmarcreporter/internal/config"
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
 	"github.com/annabellevibecodes/dmarcreporter/internal/ipinfo"
 	"github.com/annabellevibecodes/dmarcreporter/internal/spf"
@@ -28,6 +29,8 @@ type EnrichStatus struct {
 	SPFDone     int    `json:"spf_done"`
 	TLSTotal    int    `json:"tls_total"`
 	TLSDone     int    `json:"tls_done"`
+	BIMITotal   int    `json:"bimi_total"`
+	BIMIDone    int    `json:"bimi_done"`
 	Error       string `json:"error,omitempty"`
 }
 
@@ -38,6 +41,11 @@ const spfCacheTTL = 24 * time.Hour
 // constant rather than an environment variable, matching spfCacheTTL: the
 // records change rarely and the job is cheap.
 const tlsPolicyTTL = 24 * time.Hour
+
+// bimiRecordTTL is how long a BIMI assertion-record snapshot stays fresh.
+// Same reasoning as tlsPolicyTTL: the records change rarely, and the job is
+// one or two DNS queries per domain.
+const bimiRecordTTL = 24 * time.Hour
 
 // enrichEvent is one item pushed to SSE subscribers.
 type enrichEvent struct {
@@ -51,15 +59,18 @@ type enrichEvent struct {
 // the run keeps going even if every viewer disconnects.
 type EnrichWorker struct {
 	db *sqlx.DB
+	// Cfg carries the BIMI validation settings. Its zero value performs no
+	// outbound document fetches, which is what a test wants by default.
+	Cfg config.Config
 
 	mu     sync.Mutex
 	status EnrichStatus
 	subs   map[chan enrichEvent]struct{}
 }
 
-// NewEnrichWorker creates an EnrichWorker bound to db.
-func NewEnrichWorker(db *sqlx.DB) *EnrichWorker {
-	return &EnrichWorker{db: db, subs: make(map[chan enrichEvent]struct{})}
+// NewEnrichWorker creates an EnrichWorker bound to db and cfg.
+func NewEnrichWorker(db *sqlx.DB, cfg config.Config) *EnrichWorker {
+	return &EnrichWorker{db: db, Cfg: cfg, subs: make(map[chan enrichEvent]struct{})}
 }
 
 // Status returns a snapshot of the current (or most recently finished) run.
@@ -123,16 +134,19 @@ func (w *EnrichWorker) finish(ips, domains, spfDomains int, errMsg string) {
 	w.mu.Lock()
 	w.status.Running = false
 	w.status.Error = errMsg
-	// Read from the status rather than taking another parameter: the TLS job
-	// is the last to run and may not have started when an earlier one failed.
+	// Read from the status rather than taking more parameters: the later jobs
+	// may not have started when an earlier one failed.
 	tlsDomains := w.status.TLSDone
+	bimiDomains := w.status.BIMIDone
 	w.mu.Unlock()
 
 	if errMsg != "" {
 		w.publish("error", map[string]string{"message": errMsg})
 		return
 	}
-	w.publish("done", map[string]any{"ips": ips, "domains": domains, "spf": spfDomains, "tls": tlsDomains})
+	w.publish("done", map[string]any{
+		"ips": ips, "domains": domains, "spf": spfDomains, "tls": tlsDomains, "bimi": bimiDomains,
+	})
 }
 
 func (w *EnrichWorker) run() {
@@ -168,13 +182,39 @@ func (w *EnrichWorker) run() {
 		})
 	}
 
+	now := time.Now()
+
+	// Second job: snapshot the BIMI assertion record each domain publishes,
+	// per selector. It runs before the domain checks below because those
+	// derive has_bimi from these snapshots rather than from a lookup of their
+	// own — one query answers both.
+	bimiDomains, err := database.ListStaleBIMIDomains(w.db, now.Add(-bimiRecordTTL).Unix())
+	if err != nil {
+		w.finish(len(ips), 0, 0, err.Error())
+		return
+	}
+	w.mu.Lock()
+	w.status.BIMITotal = len(bimiDomains)
+	w.mu.Unlock()
+	w.publish("", map[string]any{"type": "bimi_start", "total": len(bimiDomains)})
+
+	for i, domain := range bimiDomains {
+		summary, changes := snapshotBIMIRecords(w.db, w.Cfg, domain)
+		w.mu.Lock()
+		w.status.BIMIDone = i + 1
+		w.mu.Unlock()
+		w.publish("", map[string]any{
+			"type": "bimi", "domain": domain, "summary": summary, "changed": changes,
+			"done": i + 1, "total": len(bimiDomains),
+		})
+	}
+
 	domains, err := database.ListDomains(w.db)
 	if err != nil {
 		w.finish(len(ips), 0, 0, err.Error())
 		return
 	}
 	existingChecks, _ := database.GetAllDomainChecks(w.db)
-	now := time.Now()
 
 	var toCheck []string
 	for _, d := range domains {
@@ -189,15 +229,26 @@ func (w *EnrichWorker) run() {
 	w.publish("", map[string]any{"type": "domain_start", "total": len(toCheck)})
 
 	for i, domain := range toCheck {
-		hasDMARC := lookupDMARCRecord(domain).Found
-		hasBIMI := lookupBIMI(domain).Found
-		hasMTASTS := lookupMTASTS(domain).Found
+		dmarc := lookupDMARCRecord(domain)
+		hasDMARC := dmarc.Found
+		// Not a lookup: the BIMI job above already resolved this domain's
+		// record, and the domain detail page reads the same snapshot.
+		hasBIMI, err := database.HasBIMIRecord(w.db, domain)
+		if err != nil {
+			log.Printf("enrich: bimi state %s: %v", domain, err)
+		}
+		mtaSTS := lookupMTASTS(domain)
+		hasMTASTS := mtaSTS.Found
 		dc := database.DomainCheck{
-			Domain:    domain,
-			HasDMARC:  boolToInt(hasDMARC),
-			HasBIMI:   boolToInt(hasBIMI),
-			HasMTASTS: boolToInt(hasMTASTS),
-			CheckedAt: time.Now().Unix(),
+			Domain:       domain,
+			DMARCRecord:  dmarc.Raw,
+			DMARCError:   dmarc.Error,
+			MTASTSRecord: mtaSTS.Raw,
+			MTASTSError:  mtaSTS.Error,
+			HasDMARC:     boolToInt(hasDMARC),
+			HasBIMI:      boolToInt(hasBIMI),
+			HasMTASTS:    boolToInt(hasMTASTS),
+			CheckedAt:    time.Now().Unix(),
 		}
 		if err := database.UpsertDomainCheck(w.db, dc); err != nil {
 			log.Printf("enrich: upsert %s: %v", domain, err)

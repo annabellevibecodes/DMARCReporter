@@ -39,6 +39,7 @@
         <a href="/reporters" style="font-size:11px;color:{{if eq .ActivePage "reporters"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">reporters</a>
         <a href="/alerts" style="font-size:11px;color:{{if eq .ActivePage "alerts"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">alerts</a>
         <a href="/tlsrpt" style="font-size:11px;color:{{if eq .ActivePage "tlsrpt"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">tls</a>
+        <a href="/bimi" style="font-size:11px;color:{{if eq .ActivePage "bimi"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">bimi</a>
         <a href="/accounts" style="font-size:11px;color:{{if eq .ActivePage "accounts"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">accounts</a>
         <a href="/help"    style="font-size:11px;color:{{if eq .ActivePage "help"}}#d4d0c8{{else}}#6e6a60{{end}};text-decoration:none;letter-spacing:.04em;">help</a>
         <a href="/upload"  style="font-size:11px;color:#c1121f;text-decoration:none;font-weight:{{if eq .ActivePage "upload"}}900{{else}}700{{end}};letter-spacing:.04em;">[upload]</a>
@@ -75,6 +76,7 @@
         <a href="/reporters" style="color:{{if eq .ActivePage "reporters"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "reporters"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Reporters</a>
         <a href="/alerts" style="color:{{if eq .ActivePage "alerts"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "alerts"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Alerts</a>
         <a href="/tlsrpt"  style="color:{{if eq .ActivePage "tlsrpt"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "tlsrpt"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">TLS</a>
+        <a href="/bimi"  style="color:{{if eq .ActivePage "bimi"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "bimi"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">BIMI</a>
         <a href="/accounts" style="color:{{if eq .ActivePage "accounts"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "accounts"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Accounts</a>
         <a href="/help"    style="color:{{if eq .ActivePage "help"}}#ff2d8b{{else}}#7a3055{{end}};{{if eq .ActivePage "help"}}border-bottom:2px solid #ff2d8b;padding-bottom:4px;font-weight:600;{{end}}text-decoration:none;">Help</a>
     </div>
@@ -109,6 +111,7 @@
             <a href="/reporters" style="color:{{if eq .ActivePage "reporters"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "reporters"}}normal{{else}}italic{{end}};{{if eq .ActivePage "reporters"}}font-weight:600;{{end}}">Reporters</a>
             <a href="/alerts" style="color:{{if eq .ActivePage "alerts"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "alerts"}}normal{{else}}italic{{end}};{{if eq .ActivePage "alerts"}}font-weight:600;{{end}}">Alerts</a>
             <a href="/tlsrpt"  style="color:{{if eq .ActivePage "tlsrpt"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "tlsrpt"}}normal{{else}}italic{{end}};{{if eq .ActivePage "tlsrpt"}}font-weight:600;{{end}}">TLS</a>
+            <a href="/bimi"  style="color:{{if eq .ActivePage "bimi"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "bimi"}}normal{{else}}italic{{end}};{{if eq .ActivePage "bimi"}}font-weight:600;{{end}}">BIMI</a>
             <a href="/accounts" style="color:{{if eq .ActivePage "accounts"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "accounts"}}normal{{else}}italic{{end}};{{if eq .ActivePage "accounts"}}font-weight:600;{{end}}">Accounts</a>
             <a href="/help"    style="color:{{if eq .ActivePage "help"}}#0e2a4a{{else}}#6b5e3c{{end}};text-decoration:none;font-style:{{if eq .ActivePage "help"}}normal{{else}}italic{{end}};{{if eq .ActivePage "help"}}font-weight:600;{{end}}">Help</a>
             <a href="/upload"  style="color:#0e2a4a;text-decoration:none;font-style:normal;font-weight:{{if eq .ActivePage "upload"}}700{{else}}600{{end}};">Upload &#8599;</a>
@@ -147,6 +150,7 @@
             <li><a href="/reporters" {{if eq .ActivePage "reporters"}}aria-current="page"{{end}}>Reporters</a></li>
             <li><a href="/alerts" {{if eq .ActivePage "alerts"}}aria-current="page"{{end}}>Alerts</a></li>
             <li><a href="/tlsrpt" {{if eq .ActivePage "tlsrpt"}}aria-current="page"{{end}}>TLS</a></li>
+            <li><a href="/bimi" {{if eq .ActivePage "bimi"}}aria-current="page"{{end}}>BIMI</a></li>
             <li><a href="/accounts" {{if eq .ActivePage "accounts"}}aria-current="page"{{end}}>Accounts</a></li>
             <li><a href="/help"    {{if eq .ActivePage "help"}}aria-current="page"{{end}}>Help</a></li>
             <li><a href="/upload" role="button" class="outline secondary nav-upload" {{if eq .ActivePage "upload"}}aria-current="page"{{end}}>Upload</a></li>

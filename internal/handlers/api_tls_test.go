@@ -29,7 +29,7 @@ func tlsAPIApp(t *testing.T, requireDKIM bool) (*fiber.App, *sqlx.DB) {
 		t.Fatalf("load views: %v", err)
 	}
 	app := fiber.New(fiber.Config{Views: engine, ErrorHandler: ErrorHandler})
-	a := &App{DB: db, EnrichWorker: NewEnrichWorker(db), Cfg: config.Config{TLSRPTRequireDKIM: requireDKIM}}
+	a := &App{DB: db, EnrichWorker: NewEnrichWorker(db, config.Config{}), Cfg: config.Config{TLSRPTRequireDKIM: requireDKIM}}
 	app.Get("/api/tls", a.HandleAPITLS)
 	app.Get("/api/tls/failures", a.HandleAPITLSFailures)
 	app.Get("/api/tls/policies", a.HandleAPITLSPolicies)

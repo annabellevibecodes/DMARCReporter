@@ -16,6 +16,7 @@
       <a href="/reporters" style="color:#7a3055;text-decoration:none;">Reporters</a>
       <a href="/alerts" style="color:#7a3055;text-decoration:none;">Alerts</a>
       <a href="/tlsrpt"   style="color:#7a3055;text-decoration:none;">TLS</a>
+      <a href="/bimi"     style="color:#7a3055;text-decoration:none;">BIMI</a>
       <a href="/accounts" style="color:#7a3055;text-decoration:none;">Accounts</a>
       <a href="/help"     style="color:#7a3055;text-decoration:none;">Help</a>
     </div>
@@ -297,8 +298,8 @@
 
         <!-- BIMI Coverage -->
         <div style="background:#fff;border:1.5px solid #ffd1e3;border-radius:22px;padding:20px 24px;box-shadow:0 6px 20px rgba(255,45,139,.06);">
-          <div style="font-family:'Playfair Display',serif;font-style:italic;font-size:18px;color:#5a1837;margin-bottom:4px;">BIMI coverage</div>
-          <div style="font-size:12px;color:#a06080;margin-bottom:8px;">Domains with a BIMI logo record</div>
+          <div style="font-family:'Playfair Display',serif;font-style:italic;font-size:18px;color:#5a1837;margin-bottom:4px;">BIMI readiness</div>
+          <div style="font-size:12px;color:#a06080;margin-bottom:8px;">Whether a logo would actually be shown{{with .BIMIReadiness}}{{if gt .Unchecked 0}} · {{.Unchecked}} not yet looked up{{end}}{{end}}</div>
           <div style="position:relative;height:160px;"><canvas id="bimi-pie-chart"></canvas></div>
           <script type="application/json" id="bimi-pie-data">{{.BIMIPieData}}</script>
         </div>

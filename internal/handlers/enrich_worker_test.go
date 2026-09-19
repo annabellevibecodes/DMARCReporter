@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/annabellevibecodes/dmarcreporter/internal/config"
 	"github.com/annabellevibecodes/dmarcreporter/internal/database"
 	"github.com/jmoiron/sqlx"
 )
@@ -24,7 +25,7 @@ func openEnrichTestDB(t *testing.T) *sqlx.DB {
 // completion even after all subscribers detach.
 func TestEnrichWorkerRunsToCompletionOnEmptyDB(t *testing.T) {
 	db := openEnrichTestDB(t)
-	w := NewEnrichWorker(db)
+	w := NewEnrichWorker(db, config.Config{})
 
 	ch, unsubscribe := w.subscribe()
 	defer unsubscribe()
@@ -61,7 +62,7 @@ func TestEnrichWorkerRunsToCompletionOnEmptyDB(t *testing.T) {
 // Trigger() must not start a second run while one is already in progress.
 func TestEnrichWorkerTriggerRejectsWhileRunning(t *testing.T) {
 	db := openEnrichTestDB(t)
-	w := NewEnrichWorker(db)
+	w := NewEnrichWorker(db, config.Config{})
 
 	// Simulate an in-flight run without depending on real timing.
 	w.mu.Lock()
@@ -80,7 +81,7 @@ func TestEnrichWorkerTriggerRejectsWhileRunning(t *testing.T) {
 // subscriber and stops delivering to a channel once it unsubscribes.
 func TestEnrichWorkerPublishFanOut(t *testing.T) {
 	db := openEnrichTestDB(t)
-	w := NewEnrichWorker(db)
+	w := NewEnrichWorker(db, config.Config{})
 
 	ch1, unsub1 := w.subscribe()
 	defer unsub1()
@@ -126,7 +127,7 @@ func TestEnrichWorkerPublishFanOut(t *testing.T) {
 // Status() after seeing Running=true is still guaranteed to receive the event.
 func TestEnrichWorkerFinishOrdersStatusBeforePublish(t *testing.T) {
 	db := openEnrichTestDB(t)
-	w := NewEnrichWorker(db)
+	w := NewEnrichWorker(db, config.Config{})
 	w.mu.Lock()
 	w.status = EnrichStatus{Running: true}
 	w.mu.Unlock()

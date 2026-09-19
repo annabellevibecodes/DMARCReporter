@@ -6,8 +6,10 @@ import (
 )
 
 func TestCatalogueIsComplete(t *testing.T) {
-	counts := map[string]int{"C": 8, "S": 6, "A": 8, "P": 6, "R": 8, "T": 15, "X": 19}
+	counts := map[string]int{"C": 8, "S": 6, "A": 8, "P": 6, "R": 8, "T": 15, "B": 21, "X": 30}
+	total := 0
 	for letter, n := range counts {
+		total += n
 		for i := 1; i <= n; i++ {
 			id := letter + itoa(i)
 			m, ok := Get(id)
@@ -26,8 +28,8 @@ func TestCatalogueIsComplete(t *testing.T) {
 			}
 		}
 	}
-	if len(All) != 8+6+8+6+8+15+19 {
-		t.Errorf("catalogue has %d entries, want %d", len(All), 8+6+8+6+8+15+19)
+	if len(All) != total {
+		t.Errorf("catalogue has %d entries, want %d", len(All), total)
 	}
 }
 
@@ -89,8 +91,8 @@ func TestIDsAreOrderedByFamily(t *testing.T) {
 	if ids[0] != "C1" {
 		t.Errorf("first id = %q, want C1", ids[0])
 	}
-	if ids[len(ids)-1] != "X19" {
-		t.Errorf("last id = %q, want X19", ids[len(ids)-1])
+	if ids[len(ids)-1] != "X30" {
+		t.Errorf("last id = %q, want X30", ids[len(ids)-1])
 	}
 	// X10 must sort after X9, not between X1 and X2.
 	var x9, x10 int
@@ -104,5 +106,14 @@ func TestIDsAreOrderedByFamily(t *testing.T) {
 	}
 	if x10 < x9 {
 		t.Error("X10 sorted before X9")
+	}
+	// The B family is displayed after T and before the alert rules.
+	pos := map[string]int{}
+	for i, id := range ids {
+		pos[id] = i
+	}
+	if !(pos["T15"] < pos["B1"] && pos["B21"] < pos["X1"]) {
+		t.Errorf("B family is out of place: T15=%d B1=%d B21=%d X1=%d",
+			pos["T15"], pos["B1"], pos["B21"], pos["X1"])
 	}
 }

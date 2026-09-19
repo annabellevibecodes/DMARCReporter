@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps">
+  <title>Raster inside</title>
+  <rect width="10" height="10" fill="red" stroke="blue"/>
+  <image x="0" y="0" width="64" height="64"
+     xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="/>
+</svg>

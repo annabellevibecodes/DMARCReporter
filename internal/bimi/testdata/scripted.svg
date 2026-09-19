@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<svg x="0" y="0" xmlns="http://www.w3.org/2000/svg" version="1.1" baseProfile="tiny"
+     zoomAndPan="magnify" externalResourcesRequired="true">
+  <title></title>
+  <title>Second</title>
+  <desc></desc>
+  <script type="text/javascript">alert(1)</script>
+  <a href="https://example.com/"><rect width="10" height="10" onload="alert(1)" fill="red"/></a>
+  <animate attributeName="width" from="1" to="100" dur="4s"/>
+</svg>

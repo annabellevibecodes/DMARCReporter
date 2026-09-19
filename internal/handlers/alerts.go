@@ -130,6 +130,14 @@ func contextHref(al database.Alert) string {
 		}
 	case "reporter_silent", "dns_error_spike":
 		return "/reporters"
+	case "bimi_record_changed", "bimi_blocked_by_policy", "bimi_unexpected_selector",
+		"bimi_indicator_unreachable", "bimi_indicator_invalid", "bimi_evidence_expiring",
+		"bimi_evidence_invalid", "bimi_indicator_mismatch",
+		"bimi_errors_reported", "bimi_evaluator_divergence", "bimi_verdict_regression":
+		// Everything BIMI lives on the domain page's BIMI card.
+		if al.Domain != "" {
+			return "/domains/" + url.PathEscape(al.Domain)
+		}
 	case "tls_rate_drop", "tls_policy_inconsistent", "tls_policy_host_error", "tls_reporter_silent":
 		if al.Domain != "" {
 			return "/tlsrpt?domain=" + url.QueryEscape(al.Domain)
@@ -363,6 +371,19 @@ func (a *App) healthKPIFor(domain string, f database.StatsFilter) *healthKPI {
 		// Say it plainly: the component is out of the maximum too, so the
 		// score is not being marked down for the absence.
 		parts = append(parts, "tls not scored (no reports)")
+	}
+	switch {
+	case s.BIMIScored:
+		parts = append(parts, fmt.Sprintf("bimi %.0f/%.0f", s.Components.BIMI, s.BIMIWeight))
+	case s.Domain == "":
+		// Across every domain there is no single BIMI configuration to judge.
+		parts = append(parts, "bimi not scored (per-domain only)")
+	case s.BIMIState == "declined":
+		parts = append(parts, "bimi not scored (declined)")
+	default:
+		// Same principle as TLS: the weight is out of the maximum, so the
+		// domain is not marked down for not doing BIMI.
+		parts = append(parts, "bimi not scored (no record)")
 	}
 	k.Summary = strings.Join(parts, " · ")
 	if cmp.Previous != nil {

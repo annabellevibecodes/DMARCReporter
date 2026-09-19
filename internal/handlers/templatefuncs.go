@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/annabellevibecodes/dmarcreporter/internal/bimi"
 	"github.com/annabellevibecodes/dmarcreporter/internal/ipinfo"
 	"github.com/annabellevibecodes/dmarcreporter/internal/metrics"
 )
@@ -61,8 +62,44 @@ func TemplateFuncs() template.FuncMap {
 		},
 		// Metric identifiers (C5, S4, …) render as a link to their Help entry
 		// carrying a one-line tooltip; see internal/metrics.
-		"metric":       metrics.Tag,
-		"metricRange":  metrics.RangeTag,
+		"metric":      metrics.Tag,
+		"metricRange": metrics.RangeTag,
+		// BIMI record states and finding severities, as badge classes. Absent
+		// is deliberately neutral rather than a failure: a domain that does not
+		// do BIMI is not a domain doing BIMI badly.
+		"bimiStateClass": func(state string) string {
+			switch state {
+			case bimi.StatePublished:
+				return "pass"
+			case bimi.StateInvalid:
+				return "fail"
+			case bimi.StateDeclined, bimi.StateError:
+				return "warn"
+			}
+			return "neutral"
+		},
+		"bimiStateLabel": func(state string) string {
+			switch state {
+			case bimi.StatePublished:
+				return "published"
+			case bimi.StateInvalid:
+				return "not usable"
+			case bimi.StateDeclined:
+				return "declines"
+			case bimi.StateError:
+				return "lookup failed"
+			}
+			return "no record"
+		},
+		"bimiSeverityClass": func(severity string) string {
+			switch severity {
+			case bimi.SeverityError:
+				return "fail"
+			case bimi.SeverityWarning:
+				return "warn"
+			}
+			return "neutral"
+		},
 		"patternLabel": ipinfo.PatternLabel,
 		"patternClass": func(p string) string {
 			switch p {

@@ -1,0 +1,254 @@
+<h1>BIMI {{metricRange "B1" "B21"}}</h1>
+<p style="color:var(--pico-muted-color);">
+  Brand indicators across every domain: what each one publishes, whether a receiver would act on it,
+  and what evaluators and real receivers said about it.
+</p>
+
+<form method="GET" action="/bimi" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:1rem;">
+  <label style="margin:0;">Period
+    <select name="period" onchange="this.form.submit()">
+      {{range .PeriodOptions}}<option value="{{.Value}}"{{if eq .Value $.SelectedPeriod}} selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+  </label>
+  <label style="margin:0;">Domain
+    <select name="domain" onchange="this.form.submit()">
+      <option value="">All domains</option>
+      {{range .Domains}}<option value="{{.}}"{{if eq . $.SelectedDomain}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+  </label>
+  <noscript><button type="submit">Apply</button></noscript>
+</form>
+
+{{with .BIMI}}
+{{$r := .Readiness}}
+<article class="ax">
+  <header>Readiness {{metric "B10"}}</header>
+  <div class="ax kpi-row">
+    <div class="kpi"><span class="u-label">Logo shows</span><div class="kpi-value">{{$r.Valid}}</div></div>
+    <div class="kpi"><span class="u-label">Blocked by policy</span><div class="kpi-value">{{$r.BlockedByPolicy}}</div></div>
+    <div class="kpi"><span class="u-label">Logo or evidence broken</span><div class="kpi-value">{{$r.Broken}}</div></div>
+    <div class="kpi"><span class="u-label">No record</span><div class="kpi-value">{{$r.NoRecord}}</div></div>
+  </div>
+  <p style="color:var(--pico-muted-color);font-size:0.85em;margin:0.5rem 0 0 0;">
+    Of {{$r.Total}} domain(s).
+    {{if gt $r.Declined 0}}{{$r.Declined}} decline to publish deliberately, which is a choice rather than a gap.{{end}}
+    {{if gt $r.Unchecked 0}}{{$r.Unchecked}} have never been looked up — run <a href="/enrich">Enrich</a>; until then they are counted as having no record, which may be wrong.{{end}}
+    {{if not .ValidationEnabled}}Document retrieval is switched off (<code>BIMI_VALIDATE=false</code>), so nothing here reflects whether the logos and certificates themselves are healthy.{{end}}
+  </p>
+</article>
+<br/>
+
+<article>
+  <header>Published records {{metric "B1"}} {{metric "B2"}} {{metric "B4"}}</header>
+  {{if .Domains}}
+  <div style="overflow-x:auto;">
+  <table>
+    <thead>
+      <tr>
+        <th>Domain</th><th>Record</th><th>Policy {{metric "B10"}}</th>
+        <th>Logo {{metric "B6"}} {{metric "B7"}}</th><th>Evidence {{metric "B8"}}</th><th>Agreement {{metric "B9"}}</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .Domains}}
+      <tr>
+        <td><a href="/domains/{{.Domain}}">{{.Domain}}</a><br/><small style="color:var(--pico-muted-color);">{{commaN .Messages}} message(s)</small></td>
+        <td>
+          <span class="badge {{bimiStateClass .State}}">{{bimiStateLabel .State}}</span>
+          {{if .Fallback}}<br/><small style="color:var(--pico-muted-color);">inherited from {{.FoundAt}}</small>{{end}}
+          {{if not .Checked}}<br/><small style="color:var(--pico-muted-color);">not looked up yet</small>{{end}}
+        </td>
+        <td>
+          {{if not .Known}}<span class="badge neutral">unknown</span>
+          {{else if .Eligible}}<span class="badge pass">eligible</span>
+          {{else}}<span class="badge fail">blocked</span>
+            {{range .Blockers}}<br/><small>{{.}}</small>{{end}}
+          {{end}}
+        </td>
+        <td>
+          {{if not .Validated}}<span class="badge neutral">not checked</span>
+          {{else if .Valid}}<span class="badge pass">ok</span>
+          {{else}}<span class="badge fail">problems</span>
+            {{range .Findings}}<br/><small><code>{{.}}</code></small>{{end}}
+          {{end}}
+        </td>
+        <td>
+          {{if not .HasEvidence}}<span style="color:var(--pico-muted-color);">none published</span>
+          {{else if .Validated}}{{if gt .ExpiryDays 0}}{{.ExpiryDays}} day(s) left{{else}}<strong>expired</strong>{{end}}
+          {{else}}<span style="color:var(--pico-muted-color);">not checked</span>{{end}}
+        </td>
+        <td>
+          {{if eq .Agreement "agrees"}}<span class="badge pass">agrees</span>
+          {{else if eq .Agreement "disagrees"}}<span class="badge fail">disagrees</span>
+          {{else if .Agreement}}<span style="color:var(--pico-muted-color);">n/a</span>
+          {{else}}<span style="color:var(--pico-muted-color);">—</span>{{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <p style="color:var(--pico-muted-color);margin:0;">No domains have reported mail in this period.</p>
+  {{end}}
+</article>
+<br/>
+
+{{if .Selectors}}
+<article>
+  <header>Selector inventory {{metric "B3"}}</header>
+  <table>
+    <thead><tr><th>Domain</th><th>Selector</th><th>Source</th><th>First seen</th><th>Last seen</th><th>Expected</th></tr></thead>
+    <tbody>
+    {{range .Selectors}}
+      <tr>
+        <td><a href="/domains/{{.Domain}}">{{.Domain}}</a></td>
+        <td><code>{{.Selector}}</code></td>
+        <td>{{.Source}}</td>
+        <td>{{unixTime .FirstSeen}}</td>
+        <td>{{unixTime .LastSeen}}</td>
+        <td>{{if eq .Expected 1}}yes{{else if eq .Expected 0}}no{{else}}—{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</article>
+<br/>
+{{end}}
+
+{{with .Reporting}}
+<article>
+  <header>As evaluators saw it {{metricRange "B11" "B20"}}</header>
+  {{$cov := .Coverage}}
+  <p style="margin:0 0 0.75rem 0;">
+    <strong>Coverage {{metric "B18"}}:</strong>
+    {{if eq $cov.ReportersWith 0}}
+    <span class="badge neutral">no data</span>
+    none of the {{$cov.Reporters}} reporter(s) in this period emit BIMI data. Adoption of the
+    reporting extension is close to zero, so this is the expected state — and it means nothing
+    below can be read as evidence that logos are or are not being shown.
+    {{else}}
+    {{$cov.ReportersWith}} of {{$cov.Reporters}} reporter(s) emit BIMI data, covering
+    {{printf "%.1f" $cov.Share}}% of {{commaN $cov.TotalMessages}} message(s).
+    {{end}}
+  </p>
+
+  {{if .Errors}}
+  <table>
+    <thead><tr><th>Evaluator</th><th>Domain</th><th>Selector</th><th>Error {{metric "B12"}}</th><th>Class</th><th style="text-align:right;">Count</th></tr></thead>
+    <tbody>
+    {{range .Errors}}
+      <tr>
+        <td>{{.OrgName}}</td>
+        <td><a href="/domains/{{.Domain}}">{{.Domain}}</a></td>
+        <td><code>{{.Selector}}</code></td>
+        <td>{{.Element}}{{if .Type}} / {{.Type}}{{end}}{{if .Description}}<br/><small style="color:var(--pico-muted-color);">{{.Description}}</small>{{end}}</td>
+        <td><span class="badge {{if eq .Class "perm"}}fail{{else}}warn{{end}}">{{orNone .Class}}</span></td>
+        <td style="text-align:right;">{{commaN .Count}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p style="color:var(--pico-muted-color);margin:0;">
+    No evaluator has reported a BIMI error {{metric "B12"}}. Read that beside the coverage above.
+  </p>
+  {{end}}
+
+  {{$diverged := false}}
+  {{range .Divergence}}{{if .Disagree}}{{$diverged = true}}{{end}}{{end}}
+  {{if $diverged}}
+  <h4 style="margin:1rem 0 0.25rem 0;font-size:0.95rem;">Evaluator divergence {{metric "B17"}}</h4>
+  <table>
+    <thead><tr><th>Domain</th><th>Selector</th><th>Verdicts</th></tr></thead>
+    <tbody>
+    {{range .Divergence}}{{if .Disagree}}
+      <tr>
+        <td><a href="/domains/{{.Domain}}">{{.Domain}}</a></td>
+        <td><code>{{.Selector}}</code></td>
+        <td>
+          {{range .Verdicts}}
+          <div>{{.OrgName}} — {{if .Errors}}{{range $i, $e := .Errors}}{{if $i}}, {{end}}<code>{{$e}}</code>{{end}}{{else}}no errors{{end}}</div>
+          {{end}}
+        </td>
+      </tr>
+    {{end}}{{end}}
+    </tbody>
+  </table>
+  <p style="color:var(--pico-muted-color);font-size:0.85em;margin:0.35rem 0 0 0;">
+    Where evaluators agree, the fault is in the configuration and B6–B9 will say how. Where one
+    refuses what the others accept, the difference is that receiver's strictness and nothing you
+    publish will change it.
+  </p>
+  {{end}}
+
+  {{$h := .Hygiene}}
+  {{if gt $h.ReportsAffected 0}}
+  <p style="color:var(--pico-muted-color);font-size:0.85em;margin:0.75rem 0 0 0;">
+    {{metric "B19"}} {{$h.ReportsAffected}} of {{$h.Reports}} report(s) broke a rule of the reporting
+    schema or needed a value salvaged: {{$h.DupTuples}} duplicate tuple(s), {{$h.BadCounts}} bad
+    count(s), {{$h.UnknownTypes}} unregistered value(s), {{$h.MissingAttrs}} missing attribute(s),
+    {{$h.MalformedFields}} salvaged field(s). Nothing was discarded.
+  </p>
+  {{end}}
+</article>
+<br/>
+{{end}}
+
+{{if or .Verdicts .SeedConfigured}}
+<article>
+  <header>What receivers actually did {{metric "B21"}}</header>
+  {{if .Verdicts}}
+  <table>
+    <thead><tr><th>Receiver</th><th>Domain</th><th>Selector</th><th>Latest verdict</th><th>Messages</th><th>Shown</th></tr></thead>
+    <tbody>
+    {{range .Verdicts}}
+      <tr>
+        <td>{{.Receiver}}</td>
+        <td><a href="/domains/{{.FromDomain}}">{{.FromDomain}}</a></td>
+        <td><code>{{.Selector}}</code></td>
+        <td>
+          <span class="badge {{if eq .LastResult "pass"}}pass{{else if or (eq .LastResult "declined") (eq .LastResult "none")}}neutral{{else}}fail{{end}}">{{.LastResult}}</span>
+          {{if .LastComment}}<br/><small style="color:var(--pico-muted-color);">{{.LastComment}}</small>{{end}}
+        </td>
+        <td>{{.Messages}}</td>
+        <td>{{printf "%.0f" .PassRate}}%</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  <p style="color:var(--pico-muted-color);font-size:0.85em;margin:0.35rem 0 0 0;">
+    The verdicts real receivers stamped on mail sent to a seed address: the only evidence here of
+    what a person would actually have seen, and only for the mail you send there.
+  </p>
+  {{else}}
+  <p style="color:var(--pico-muted-color);margin:0;">
+    A seed mailbox is configured but no verdict has arrived yet.
+  </p>
+  {{end}}
+</article>
+<br/>
+{{end}}
+
+{{if .Changes}}
+<article>
+  <header>Change log {{metric "B5"}}</header>
+  <table>
+    <thead><tr><th>Domain</th><th>Selector</th><th>Observed</th><th>Record</th></tr></thead>
+    <tbody>
+    {{range .Changes}}
+      <tr>
+        <td><a href="/domains/{{.Domain}}">{{.Domain}}</a></td>
+        <td><code>{{.Selector}}</code></td>
+        <td style="white-space:nowrap;">{{unixDateTime .FirstSeen}}</td>
+        <td style="word-break:break-all;font-size:0.85em;">{{if .Error}}<em>lookup failed: {{.Error}}</em>{{else if .Content}}<code>{{.Content}}</code>{{else}}<em>no record</em>{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  <p style="color:var(--pico-muted-color);font-size:0.85em;margin:0.35rem 0 0 0;">
+    One row per distinct observed state, not per check.
+  </p>
+</article>
+{{end}}
+{{end}}

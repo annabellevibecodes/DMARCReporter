@@ -183,6 +183,29 @@ func buildDocxBody(rd *ReportData, title string) string {
 		sb.WriteString(docxPara("No TLS reports for this period."))
 	}
 
+	sb.WriteString(docxPara(""))
+	sb.WriteString(docxHeading2("BIMI (Brand Indicators)"))
+	if kvRows := bimiSummaryKV(rd); len(kvRows) > 0 {
+		sb.WriteString(docxTable([]string{"Metric", "Value"}, kvSliceToRows(kvRows)))
+	} else {
+		sb.WriteString(docxPara("No domains have been checked for BIMI in this period."))
+	}
+	if rows := bimiDomainRows(rd); len(rows) > 0 {
+		sb.WriteString(docxPara(""))
+		sb.WriteString(docxHeading2("BIMI Configuration by Domain"))
+		sb.WriteString(docxTable(bimiDomainHeaders, rows))
+	}
+	if rows := bimiErrorRows(rd); len(rows) > 0 {
+		sb.WriteString(docxPara(""))
+		sb.WriteString(docxHeading2("BIMI Errors Reported by Evaluators"))
+		sb.WriteString(docxTable(bimiErrorHeaders, rows))
+	}
+	if rows := bimiVerdictRows(rd); len(rows) > 0 {
+		sb.WriteString(docxPara(""))
+		sb.WriteString(docxHeading2("BIMI Verdicts on Seed Mail"))
+		sb.WriteString(docxTable(bimiVerdictHeaders, rows))
+	}
+
 	if rows := alertRows(rd); len(rows) > 0 {
 		sb.WriteString(docxPara(""))
 		sb.WriteString(docxHeading2("Open Alerts"))

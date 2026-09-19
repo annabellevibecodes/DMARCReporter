@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<feedback>
+  <report_metadata>
+    <org_name>reporter.tld</org_name><report_id>dual-role</report_id>
+    <date_range><begin>1609459200</begin><end>1609545599</end></date_range>
+  </report_metadata>
+  <policy_published><domain>sender.tld</domain><p>reject</p></policy_published>
+  <record>
+    <row><source_ip>192.0.2.1</source_ip><count>10</count>
+      <policy_evaluated><disposition>none</disposition><dkim>pass</dkim><spf>pass</spf></policy_evaluated></row>
+    <identifiers><header_from>sender.tld</header_from></identifiers>
+  </record>
+  <bimi>
+    <domain aligned="sender.tld" assertion="sender.tld">
+      <assertion selector="default" l="https://sender.tld/logo.svg" a="https://sender.tld/vmc.pem">
+        <evidence evidence-date="Mon, 2 Jan 2026 15:04:05 +0000"
+                  evidence-issuer="Test MVA"
+                  evidence-type="VMC"
+                  evidence-url="https://sender.tld/vmc.pem" />
+        <errors>
+          <assertion class="perm" type="parsing" description="the l= tag would not parse">3</assertion>
+          <evidence class="perm" type="expired" description="certificate expired">5</evidence>
+          <indicator class="temp" type="retrieval">7</indicator>
+          <undefined class="perm" description="something else entirely">11</undefined>
+        </errors>
+      </assertion>
+    </domain>
+  </bimi>
+</feedback>

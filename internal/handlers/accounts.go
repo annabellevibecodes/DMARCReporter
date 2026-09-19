@@ -70,6 +70,13 @@ func (a *App) HandleAccountCreate(c *fiber.Ctx) error {
 	provider := c.FormValue("provider")
 	username := strings.TrimSpace(c.FormValue("username"))
 	mailbox := strings.TrimSpace(c.FormValue("mailbox"))
+	// A seed mailbox is read for BIMI verdicts and never for reports. Anything
+	// but the explicit value is a report mailbox: a mailbox whose role is
+	// unclear must not be treated as the operator's own mail.
+	purpose := database.PurposeReport
+	if strings.TrimSpace(c.FormValue("purpose")) == database.PurposeSeed {
+		purpose = database.PurposeSeed
+	}
 	processed := strings.TrimSpace(c.FormValue("processed_mailbox"))
 
 	if name == "" || username == "" {
@@ -157,6 +164,7 @@ func (a *App) HandleAccountCreate(c *fiber.Ctx) error {
 		ProcessedMailbox: processed,
 		TLS:              tls,
 		Enabled:          1,
+		Purpose:          purpose,
 	}
 	id, err := database.InsertAccount(a.DB, acc)
 	if err != nil {

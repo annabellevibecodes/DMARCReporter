@@ -232,3 +232,72 @@ func TestLabelForUsesShareOfMaximum(t *testing.T) {
 		t.Errorf("LabelFor(90, 100) = %q, want Excellent", got)
 	}
 }
+
+// A domain that does not do BIMI is not doing it badly: the component leaves
+// both the total and the maximum, so the score is exactly what it would have
+// been before the component existed.
+func TestBIMIComponentIsSkippedNotZeroed(t *testing.T) {
+	db := openDB(t)
+	saveDMARC(t, db, "google.com", "b1", "example.com", day(2))
+
+	got, err := ComputeWithOptions(db, "example.com", database.StatsFilter{}, DefaultWeights, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BIMIScored {
+		t.Fatalf("a domain with no BIMI record was scored for BIMI: %+v", got)
+	}
+	if got.Components.BIMI != 0 {
+		t.Errorf("BIMI component = %v, want zero when not scored", got.Components.BIMI)
+	}
+	withoutBIMI := got.Max
+
+	// Publishing a record brings the component into play.
+	if _, err := database.UpsertBIMISnapshot(db, database.BIMISnapshot{
+		Domain: "example.com", Selector: "default", Kind: database.BIMISnapshotRecord,
+		Content: "v=BIMI1; l=https://example.com/logo.svg",
+		Detail:  `{"state":"published","record":{"raw":"v=BIMI1; l=https://example.com/logo.svg","version":"BIMI1","location":"https://example.com/logo.svg","l_present":true}}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = ComputeWithOptions(db, "example.com", database.StatsFilter{}, DefaultWeights, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.BIMIScored {
+		t.Fatalf("a published record was not scored: %+v", got)
+	}
+	if got.Max <= withoutBIMI {
+		t.Errorf("max = %d, want it to grow from %d once the component applies", got.Max, withoutBIMI)
+	}
+	// Only the policy half is in play until the documents are checked.
+	if got.BIMIValidated {
+		t.Error("the documents have not been checked and must not be scored")
+	}
+	if got.BIMIWeight != DefaultWeights.BIMI*0.4 {
+		t.Errorf("weight in play = %v, want the policy half only", got.BIMIWeight)
+	}
+}
+
+// A declination is a decision, not a failure, and must not be scored either.
+func TestBIMIComponentSkipsDeclination(t *testing.T) {
+	db := openDB(t)
+	saveDMARC(t, db, "google.com", "b2", "example.com", day(2))
+	if _, err := database.UpsertBIMISnapshot(db, database.BIMISnapshot{
+		Domain: "example.com", Selector: "default", Kind: database.BIMISnapshotRecord,
+		Content: "v=BIMI1; l=; a=;",
+		Detail:  `{"state":"declined","record":{"raw":"v=BIMI1; l=; a=;","version":"BIMI1","l_present":true,"a_present":true}}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ComputeWithOptions(db, "example.com", database.StatsFilter{}, DefaultWeights, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BIMIScored {
+		t.Errorf("a declination was scored: %+v", got)
+	}
+	if got.BIMIState != "declined" {
+		t.Errorf("state = %q, want it recorded even when not scored", got.BIMIState)
+	}
+}

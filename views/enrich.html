@@ -70,7 +70,9 @@
      data-spf-done="{{.EnrichSPFDone}}"
      data-spf-total="{{.EnrichSPFTotal}}"
      data-tls-done="{{.EnrichTLSDone}}"
-     data-tls-total="{{.EnrichTLSTotal}}">
+     data-tls-total="{{.EnrichTLSTotal}}"
+     data-bimi-done="{{.EnrichBIMIDone}}"
+     data-bimi-total="{{.EnrichBIMITotal}}">
   <article>
     <header>
       <span id="progress-title">Running&hellip;</span>
@@ -85,6 +87,16 @@
       </div>
       <progress id="ip-bar" value="0" max="1" style="width:100%;margin-bottom:8px;"></progress>
       <div id="ip-log" style="max-height:200px;overflow-y:auto;font-family:monospace;font-size:12px;background:var(--pico-code-background,#f4f4f4);padding:8px;border-radius:4px;"></div>
+    </div>
+
+    <!-- BIMI record progress -->
+    <div id="bimi-section" style="display:none;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+        <strong>BIMI assertion records</strong>
+        <span id="bimi-counter" style="font-size:0.85rem;color:var(--pico-muted-color);"></span>
+      </div>
+      <progress id="bimi-bar" value="0" max="1" style="width:100%;margin-bottom:8px;"></progress>
+      <div id="bimi-log" style="max-height:200px;overflow-y:auto;font-family:monospace;font-size:12px;background:var(--pico-code-background,#f4f4f4);padding:8px;border-radius:4px;"></div>
     </div>
 
     <!-- Domain progress -->

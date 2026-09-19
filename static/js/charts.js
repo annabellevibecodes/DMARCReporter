@@ -209,7 +209,9 @@ function initPieChart(canvasId, dataScriptId, colors) {
 // Auto-initialise the three dashboard pie charts.
 (function () {
     initPieChart('policy-pie-chart', 'policy-pie-data', ['#6c757d', '#fd7e14', '#dc3545']);
-    initPieChart('bimi-pie-chart',   'bimi-pie-data',   ['#198754', '#dee2e6']);
+    // Four slices, in the order the handler writes them: the logo shows, the
+    // policy blocks it, a document is broken, or there is no record at all.
+    initPieChart('bimi-pie-chart',   'bimi-pie-data',   ['#198754', '#fd7e14', '#dc3545', '#dee2e6']);
     initPieChart('mtasts-pie-chart', 'mtasts-pie-data', ['#0d6efd', '#dee2e6']);
 }());
 

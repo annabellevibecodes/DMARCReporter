@@ -39,12 +39,28 @@ func (a *App) refreshDomainChecks() {
 			now.Sub(time.Unix(dc.CheckedAt, 0)) <= domainCheckTTL {
 			continue
 		}
+		// The BIMI record is snapshotted rather than merely counted, so the
+		// domain page and the change log stay current without the Enrich job
+		// having to be run by hand.
+		if summary, changes := snapshotBIMIRecords(a.DB, a.Cfg, domain); changes > 0 {
+			log.Printf("domain-check refresher: %s BIMI changed — %s", domain, summary)
+		}
+		hasBIMI, err := database.HasBIMIRecord(a.DB, domain)
+		if err != nil {
+			log.Printf("domain-check refresher: bimi state %s: %v", domain, err)
+		}
+		dmarc := lookupDMARCRecord(domain)
+		mtaSTS := lookupMTASTS(domain)
 		dc := database.DomainCheck{
-			Domain:    domain,
-			HasDMARC:  boolToInt(lookupDMARCRecord(domain).Found),
-			HasBIMI:   boolToInt(lookupBIMI(domain).Found),
-			HasMTASTS: boolToInt(lookupMTASTS(domain).Found),
-			CheckedAt: time.Now().Unix(),
+			Domain:       domain,
+			DMARCRecord:  dmarc.Raw,
+			DMARCError:   dmarc.Error,
+			MTASTSRecord: mtaSTS.Raw,
+			MTASTSError:  mtaSTS.Error,
+			HasDMARC:     boolToInt(dmarc.Found),
+			HasBIMI:      boolToInt(hasBIMI),
+			HasMTASTS:    boolToInt(mtaSTS.Found),
+			CheckedAt:    time.Now().Unix(),
 		}
 		if err := database.UpsertDomainCheck(a.DB, dc); err != nil {
 			log.Printf("domain-check refresher: upsert %s: %v", domain, err)

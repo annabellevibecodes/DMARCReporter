@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -42,7 +43,13 @@ type Account struct {
 	LastFetchStatus   string `db:"last_fetch_status"`
 	LastFetchDetail   string `db:"last_fetch_detail"`
 	LastFetchImported int64  `db:"last_fetch_imported"`
+	// Purpose is report (the default) or seed. A seed mailbox is never read
+	// for report attachments and never has anything moved out of it.
+	Purpose string `db:"purpose"`
 }
+
+// IsSeed reports a mailbox read for BIMI verdicts rather than for reports.
+func (a Account) IsSeed() bool { return a.Purpose == PurposeSeed }
 
 // LastFetchTime returns LastFetchAt as a UTC time.Time.
 func (a Account) LastFetchTime() time.Time { return time.Unix(a.LastFetchAt, 0).UTC() }
@@ -107,10 +114,10 @@ func InsertAccount(db *sqlx.DB, a Account) (int64, error) {
 	res, err := db.Exec(`
 		INSERT INTO accounts
 			(name, provider, host, port, username, auth_type, secret_enc,
-			 mailbox, processed_mailbox, tls, enabled, created_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+			 mailbox, processed_mailbox, tls, enabled, created_at, purpose)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		a.Name, a.Provider, a.Host, a.Port, a.Username, a.AuthType, a.SecretEnc,
-		a.Mailbox, a.ProcessedMailbox, a.TLS, a.Enabled, time.Now().Unix())
+		a.Mailbox, a.ProcessedMailbox, a.TLS, a.Enabled, time.Now().Unix(), normalisePurpose(a.Purpose))
 	if err != nil {
 		return 0, err
 	}
@@ -118,15 +125,52 @@ func InsertAccount(db *sqlx.DB, a Account) (int64, error) {
 }
 
 // UpdateAccountConfig updates the connection settings of an existing account.
+//
+// Changing the purpose clears the examined-message caches: a mailbox already
+// walked as a report source has had none of its BIMI verdicts read, and one
+// walked as a seed source has had none of its attachments opened. Without the
+// purge the change would take effect only for mail arriving afterwards.
 func UpdateAccountConfig(db *sqlx.DB, a Account) error {
+	prev, err := GetAccount(db, a.ID)
+	if err == nil && prev != nil && normalisePurpose(prev.Purpose) != normalisePurpose(a.Purpose) {
+		if err := ClearAccountSeenCache(db, a.ID); err != nil {
+			return err
+		}
+	}
+	return updateAccountConfig(db, a)
+}
+
+// ClearAccountSeenCache forgets which messages of an account have been
+// examined, so the next fetch walks the mailbox again.
+func ClearAccountSeenCache(db *sqlx.DB, id int64) error {
+	if _, err := db.Exec(`DELETE FROM imap_seen WHERE account_id = ?`, id); err != nil {
+		return err
+	}
+	_, err := db.Exec(`DELETE FROM graph_seen WHERE account_id = ?`, id)
+	return err
+}
+
+func updateAccountConfig(db *sqlx.DB, a Account) error {
 	_, err := db.Exec(`
 		UPDATE accounts SET
 			name = ?, provider = ?, host = ?, port = ?, username = ?,
-			auth_type = ?, secret_enc = ?, mailbox = ?, processed_mailbox = ?, tls = ?
+			auth_type = ?, secret_enc = ?, mailbox = ?, processed_mailbox = ?, tls = ?,
+			purpose = ?
 		WHERE id = ?`,
 		a.Name, a.Provider, a.Host, a.Port, a.Username,
-		a.AuthType, a.SecretEnc, a.Mailbox, a.ProcessedMailbox, a.TLS, a.ID)
+		a.AuthType, a.SecretEnc, a.Mailbox, a.ProcessedMailbox, a.TLS,
+		normalisePurpose(a.Purpose), a.ID)
 	return err
+}
+
+// normalisePurpose keeps the column to the two values that mean anything.
+// An unrecognised purpose becomes "report": a mailbox whose role is unclear
+// must not silently be read as the operator's own mail.
+func normalisePurpose(p string) string {
+	if strings.TrimSpace(strings.ToLower(p)) == PurposeSeed {
+		return PurposeSeed
+	}
+	return PurposeReport
 }
 
 // UpdateAccountSecret replaces only the encrypted secret blob.

@@ -38,6 +38,7 @@ func ParseXML(r io.Reader) (*models.Feedback, error) {
 		return nil, fmt.Errorf("invalid DMARC report: missing report_id")
 	}
 	normalizeRecords(&fb)
+	normalizeBIMI(&fb)
 	return &fb, nil
 }
 

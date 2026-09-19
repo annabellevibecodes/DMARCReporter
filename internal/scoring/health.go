@@ -41,13 +41,14 @@ type Weights struct {
 	Coverage    float64
 	Alerts      float64
 	TLS         float64
+	BIMI        float64
 }
 
 // WeightsFromConfig reads HEALTH_W_* (falling back to the spec defaults).
 func WeightsFromConfig(cfg config.Config) Weights {
 	w := Weights{PassRate: cfg.HealthWeightPassRate, Enforcement: cfg.HealthWeightEnforcement,
 		Spoof: cfg.HealthWeightSpoof, Coverage: cfg.HealthWeightCoverage, Alerts: cfg.HealthWeightAlerts,
-		TLS: cfg.HealthWeightTLS}
+		TLS: cfg.HealthWeightTLS, BIMI: cfg.HealthWeightBIMI}
 	if w.PassRate+w.Enforcement+w.Spoof+w.Coverage+w.Alerts <= 0 {
 		return DefaultWeights
 	}
@@ -58,7 +59,7 @@ func WeightsFromConfig(cfg config.Config) Weights {
 // TLS component is added on top rather than by rebalancing them, because Max
 // is computed from the weights in play and a domain's DMARC score therefore
 // keeps its meaning.
-var DefaultWeights = Weights{PassRate: 40, Enforcement: 25, Spoof: 15, Coverage: 10, Alerts: 10, TLS: 15}
+var DefaultWeights = Weights{PassRate: 40, Enforcement: 25, Spoof: 15, Coverage: 10, Alerts: 10, TLS: 15, BIMI: 10}
 
 // Score is the result with every component exposed for the UI.
 type Score struct {
@@ -84,6 +85,18 @@ type Score struct {
 	TLSSessions  int64   `json:"tls_sessions"`
 	TLSReporters int     `json:"tls_reporters"`
 
+	// Brand indicators. BIMIScored is false when the domain publishes no BIMI
+	// record, in which case the component leaves both the total and the
+	// maximum — "does not use BIMI" must never look like "BIMI is broken".
+	BIMIScored    bool   `json:"bimi_scored"`
+	BIMIState     string `json:"bimi_state,omitempty"`
+	BIMIEligible  bool   `json:"bimi_eligible"`
+	BIMIValidated bool   `json:"bimi_validated"`
+	BIMIValid     bool   `json:"bimi_valid"`
+	// BIMIWeight is how much of the BIMI weight was actually in play: the
+	// policy half alone when the documents have not been checked.
+	BIMIWeight float64 `json:"bimi_weight"`
+
 	Components struct {
 		PassRate    float64 `json:"pass_rate"`
 		Enforcement float64 `json:"enforcement"`
@@ -91,6 +104,7 @@ type Score struct {
 		Coverage    float64 `json:"coverage"`
 		Alerts      float64 `json:"alerts"`
 		TLS         float64 `json:"tls"`
+		BIMI        float64 `json:"bimi"`
 	} `json:"components"`
 	Weights Weights `json:"weights"`
 }
@@ -208,14 +222,25 @@ func ComputeWithOptions(db *sqlx.DB, domain string, f database.StatsFilter, w We
 		return nil, err
 	}
 
+	// Brand indicators (B10 plus B6–B9). Judged only for a domain that
+	// publishes a record: a domain that does not do BIMI is not doing it
+	// badly, so the component is dropped from the maximum rather than scored
+	// zero — the same rule the TLS component follows.
+	if err := s.scoreBIMI(db, domain, f, w); err != nil {
+		return nil, err
+	}
+
 	maxWeight := w.PassRate + w.Enforcement + w.Spoof + w.Coverage + w.Alerts
 	if s.TLSScored {
 		maxWeight += w.TLS
 	}
+	if s.BIMIScored {
+		maxWeight += s.BIMIWeight
+	}
 	s.Max = int(math.Round(maxWeight))
 
 	total := s.Components.PassRate + s.Components.Enforcement + s.Components.Spoof +
-		s.Components.Coverage + s.Components.Alerts + s.Components.TLS
+		s.Components.Coverage + s.Components.Alerts + s.Components.TLS + s.Components.BIMI
 	s.Total = int(math.Round(total))
 	if s.Total > s.Max {
 		s.Total = s.Max
@@ -260,5 +285,79 @@ func (s *Score) scoreTLS(db *sqlx.DB, domain string, f database.StatsFilter, w W
 		component += w.TLS * 0.15
 	}
 	s.Components.TLS = component
+	return nil
+}
+
+// scoreBIMI fills in the brand-indicator component.
+//
+// It is scored only for a domain that publishes a record offering an
+// indicator. A domain with no record, or one that declines to publish, is not
+// doing BIMI badly — it is not doing BIMI — so the component leaves both the
+// total and the maximum, exactly as the TLS component does when there are no
+// sessions. Scoring it zero would tell every operator who has never heard of
+// BIMI that their domain is broken.
+//
+// The split, once a record exists: 40 % that the DMARC policy permits BIMI at
+// all (B10), 60 % that the documents check out (B6–B9). A record whose
+// documents have not been checked — because BIMI_VALIDATE is off, or because
+// Enrich has not run — scores the policy half and keeps the other half out of
+// the maximum, since an unperformed check is not a failed one.
+func (s *Score) scoreBIMI(db *sqlx.DB, domain string, f database.StatsFilter, w Weights) error {
+	if domain == "" {
+		// The all-domains score has no single BIMI configuration to judge.
+		return nil
+	}
+	state, err := database.GetBIMIDomainState(db, domain)
+	if err != nil {
+		return err
+	}
+	if state == nil || !state.Published() {
+		if state != nil {
+			s.BIMIState = state.State
+		}
+		return nil
+	}
+	s.BIMIScored = true
+	s.BIMIState = state.State
+
+	readiness, err := database.GetBIMIReadinessFor(db, domain, f)
+	if err != nil {
+		return err
+	}
+	// An unknown policy (no reports in the window) is not scored against the
+	// domain: it is scored as eligible, because the record exists and nothing
+	// contradicts it.
+	s.BIMIEligible = !readiness.Known || readiness.Eligible
+
+	component := 0.0
+	if s.BIMIEligible {
+		component += w.BIMI * 0.4
+	}
+
+	validations, err := database.ListBIMIValidations(db, domain)
+	if err != nil {
+		return err
+	}
+	var checked *database.BIMIValidationState
+	for i := range validations {
+		if validations[i].Selector == state.Selector && validations[i].Checked() {
+			checked = &validations[i]
+			break
+		}
+	}
+	if checked == nil {
+		// The documents have not been checked. Drop that 60 % from the
+		// maximum too, so the domain is judged only on what was measured.
+		s.BIMIWeight = w.BIMI * 0.4
+		s.Components.BIMI = component
+		return nil
+	}
+	s.BIMIValidated = true
+	s.BIMIValid = checked.Valid()
+	s.BIMIWeight = w.BIMI
+	if s.BIMIValid {
+		component += w.BIMI * 0.6
+	}
+	s.Components.BIMI = component
 	return nil
 }

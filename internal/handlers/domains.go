@@ -21,6 +21,9 @@ type DMARCRecord struct {
 	Error string
 	Raw   string
 	Tags  []DMARCTag
+	// Checked is false when the domain has never been looked up, which the
+	// page must not render as "publishes nothing".
+	Checked bool
 }
 
 // DMARCTag is one key=value pair from the DMARC TXT record.
@@ -59,6 +62,10 @@ func sanitiseReportURIList(val string) string {
 	return strings.Join(safe, ",")
 }
 
+// lookupDMARCRecord resolves and parses _dmarc.<domain>.
+//
+// It is called from the Enrich worker and the background refresher only. The
+// domain page reads what they stored: no handler resolves DNS.
 func lookupDMARCRecord(domain string) DMARCRecord {
 	txts, err := net.LookupTXT("_dmarc." + domain)
 	if err != nil {
@@ -75,7 +82,15 @@ func lookupDMARCRecord(domain string) DMARCRecord {
 	if raw == "" {
 		return DMARCRecord{Error: "no DMARC record found at _dmarc." + domain}
 	}
+	return parseDMARCRecord(raw)
+}
 
+// parseDMARCRecord parses one published record. Pure: it is what the domain
+// page runs over the cached text.
+func parseDMARCRecord(raw string) DMARCRecord {
+	if strings.TrimSpace(raw) == "" {
+		return DMARCRecord{}
+	}
 	rec := DMARCRecord{Found: true, Raw: raw}
 	for _, part := range strings.Split(raw, ";") {
 		part = strings.TrimSpace(part)
@@ -168,63 +183,17 @@ func dmarcExplain(key, val string) string {
 	return ""
 }
 
-// BIMIRecord holds a parsed BIMI DNS TXT record.
-type BIMIRecord struct {
+// MTASTSRecord holds a parsed MTA-STS DNS TXT record.
+type MTASTSRecord struct {
 	Found   bool
 	Error   string
 	Raw     string
-	LogoURL string // l= tag
-	VMCCert string // a= tag
+	ID      string // id= tag
+	Checked bool
 }
 
-// MTASTSRecord holds a parsed MTA-STS DNS TXT record.
-type MTASTSRecord struct {
-	Found bool
-	Error string
-	Raw   string
-	ID    string // id= tag
-}
-
-func lookupBIMI(domain string) BIMIRecord {
-	txts, err := net.LookupTXT("default._bimi." + domain)
-	if err != nil {
-		var dnsErr *net.DNSError
-		if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
-			return BIMIRecord{} // NXDOMAIN — no record, not an error
-		}
-		return BIMIRecord{Error: err.Error()}
-	}
-	var raw string
-	for _, t := range txts {
-		if strings.HasPrefix(strings.TrimSpace(t), "v=BIMI1") {
-			raw = t
-			break
-		}
-	}
-	if raw == "" {
-		return BIMIRecord{} // DNS answered but no BIMI TXT present
-	}
-	rec := BIMIRecord{Found: true, Raw: raw}
-	for _, part := range strings.Split(raw, ";") {
-		part = strings.TrimSpace(part)
-		idx := strings.IndexByte(part, '=')
-		if idx < 0 {
-			continue
-		}
-		key := strings.ToLower(strings.TrimSpace(part[:idx]))
-		val := strings.TrimSpace(part[idx+1:])
-		switch key {
-		case "l":
-			if strings.HasPrefix(val, "https://") {
-				rec.LogoURL = val
-			}
-		case "a":
-			rec.VMCCert = val
-		}
-	}
-	return rec
-}
-
+// lookupMTASTS resolves and parses _mta-sts.<domain>. Background jobs only;
+// see lookupDMARCRecord.
 func lookupMTASTS(domain string) MTASTSRecord {
 	txts, err := net.LookupTXT("_mta-sts." + domain)
 	if err != nil {
@@ -243,6 +212,14 @@ func lookupMTASTS(domain string) MTASTSRecord {
 	}
 	if raw == "" {
 		return MTASTSRecord{} // DNS answered but no MTA-STS TXT present
+	}
+	return parseMTASTSRecord(raw)
+}
+
+// parseMTASTSRecord parses one published record.
+func parseMTASTSRecord(raw string) MTASTSRecord {
+	if strings.TrimSpace(raw) == "" {
+		return MTASTSRecord{}
 	}
 	rec := MTASTSRecord{Found: true, Raw: raw}
 	for _, part := range strings.Split(raw, ";") {
@@ -391,9 +368,25 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 		return err
 	}
 
-	dmarcRec := lookupDMARCRecord(domain)
-	bimiRec := lookupBIMI(domain)
-	mtaStsRec := lookupMTASTS(domain)
+	// Both records come from the domain-check cache the Enrich worker and the
+	// background refresher maintain. Nothing here resolves DNS: a page render
+	// must not wait on a resolver, and a slow or hostile one must not be able
+	// to hold the request open.
+	dc, err := database.GetDomainCheck(a.DB, domain)
+	if err != nil {
+		return err
+	}
+	dmarcRec := parseDMARCRecord(dc.DMARCRecord)
+	dmarcRec.Error = dc.DMARCError
+	dmarcRec.Checked = dc.Checked()
+	mtaStsRec := parseMTASTSRecord(dc.MTASTSRecord)
+	mtaStsRec.Error = dc.MTASTSError
+	mtaStsRec.Checked = dc.Checked()
+
+	bimiView, err := buildBIMIView(a.DB, a.Cfg, domain, f)
+	if err != nil {
+		return err
+	}
 
 	flashKind, flashMsg := getFlash(c)
 	return c.Render("domain_detail", fiber.Map{
@@ -421,7 +414,7 @@ func (a *App) HandleDomainDetail(c *fiber.Ctx) error {
 		"DKIMSelectors":         dkimSelectors,
 		"DKIMSelectorData":      template.JS(selectorBytes),
 		"DMARCRecord":           dmarcRec,
-		"BIMIRecord":            bimiRec,
+		"BIMI":                  bimiView,
 		"MTASTSRecord":          mtaStsRec,
 		"PeriodOptions":         periodOptions,
 		"SelectedPeriod":        period,

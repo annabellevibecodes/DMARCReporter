@@ -140,6 +140,23 @@ func writeAnalyticsSheet(f *excelize.File, rd *ReportData, headerStyle, subHeade
 		kv([][2]string{{"TLS reports", "none for this period"}})
 	}
 
+	section("BIMI (Brand Indicators)")
+	if kvRows := bimiSummaryKV(rd); len(kvRows) > 0 {
+		kv(kvRows)
+	}
+	if rows := bimiDomainRows(rd); len(rows) > 0 {
+		section("BIMI Configuration by Domain")
+		table(bimiDomainHeaders, rows)
+	}
+	if rows := bimiErrorRows(rd); len(rows) > 0 {
+		section("BIMI Errors Reported by Evaluators")
+		table(bimiErrorHeaders, rows)
+	}
+	if rows := bimiVerdictRows(rd); len(rows) > 0 {
+		section("BIMI Verdicts on Seed Mail")
+		table(bimiVerdictHeaders, rows)
+	}
+
 	if rows := alertRows(rd); len(rows) > 0 {
 		section("Open Alerts")
 		table(alertHeaders, rows)

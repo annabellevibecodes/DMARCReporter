@@ -39,6 +39,17 @@
       <tr><td>X17 <code>tls_dane_invalid</code></td><td>A reporter could not validate your DANE records</td><td>any occurrence</td></tr>
       <tr><td>X18 <code>tls_reporter_silent</code></td><td>A TLS reporter active in the last 14 days stopped sending</td><td><code>ALERT_TLS_REPORTER_GAP_DAYS</code> (3)</td></tr>
       <tr><td>X19 <code>tls_new_failing_receiver</code></td><td>A receiving node started failing under an MX host whose other nodes are fine</td><td><code>ALERT_TLS_NEW_FAILING_IP_MIN</code> (10)</td></tr>
+      <tr><td>X20 <code>bimi_record_changed</code></td><td>A domain's published BIMI assertion record changed</td><td>any change in <code>ALERT_RECENT_HOURS</code> (48)</td></tr>
+      <tr><td>X21 <code>bimi_blocked_by_policy</code></td><td>A domain publishes a BIMI record that no receiver can act on, because its DMARC policy does not qualify</td><td>a published record failing the B10 test</td></tr>
+      <tr><td>X22 <code>bimi_unexpected_selector</code></td><td>A BIMI selector not marked as expected started publishing a record</td><td><code>ALERT_NEW_SELECTOR_HOURS</code> (48)</td></tr>
+      <tr><td>X23 <code>bimi_indicator_unreachable</code></td><td>The logo at <code>l=</code> could not be retrieved, or the TLS chain of the host serving it did not validate</td><td>any retrieval or TLS failure</td></tr>
+      <tr><td>X24 <code>bimi_indicator_invalid</code></td><td>The retrieved logo breaches the SVG Tiny Portable/Secure profile</td><td>any breach in the retrieved document</td></tr>
+      <tr><td>X25 <code>bimi_evidence_expiring</code></td><td>The evidence document at <code>a=</code> is approaching expiry</td><td><code>ALERT_BIMI_EXPIRY_DAYS</code> (30)</td></tr>
+      <tr><td>X26 <code>bimi_evidence_invalid</code></td><td>The evidence document has expired, been revoked, or no longer chains to a trusted root</td><td>any of the three</td></tr>
+      <tr><td>X27 <code>bimi_indicator_mismatch</code></td><td>The logo served at <code>l=</code> is not the mark inside the evidence document</td><td>any difference between the two marks</td></tr>
+      <tr><td>X28 <code>bimi_errors_reported</code></td><td>An evaluator reported a BIMI error tuple for a domain for the first time</td><td>first seen within <code>ALERT_RECENT_HOURS</code> (48); a <code>perm</code> class is critical</td></tr>
+      <tr><td>X29 <code>bimi_evaluator_divergence</code></td><td>Evaluators disagree about one BIMI configuration in the same window</td><td>two evaluators reporting different error sets for one configuration</td></tr>
+      <tr><td>X30 <code>bimi_verdict_regression</code></td><td>A receiver that used to stamp <code>bimi=pass</code> on seed mail has stopped</td><td>the newest verdict is not a pass, and the receiver has passed before</td></tr>
     </tbody>
   </table>
   <p>
@@ -55,6 +66,21 @@
     X12–X19 do the same for SMTP TLS reporting: X12 watches the success rate from T1, X13–X14 and
     X17 the result types from T4, X15 the policy divergence and drift from T8, X16 the policy-host
     errors from T10, X18 the reporter coverage from T12, and X19 the per-node failures from T5.
+    X20–X27 cover brand indicators: X20 is the B5 change log, X21 the B10 policy precondition,
+    X22 the B3 selector inventory, X23 and X24 the indicator endpoint and profile checks from B6
+    and B7, X25 and X26 the evidence document from B8, and X27 the mark agreement from B9. X21 is
+    the one alert here that reports wasted effort rather than breakage — the record is fine, and no
+    receiver will ever look at it. X23–X27 need the active checks, which are switched off by
+    <code>BIMI_VALIDATE=false</code>; a domain those checks have never run for raises none of them,
+    because absence of evidence is not evidence of breakage. X28 and X29 read the
+    <code>&lt;bimi&gt;</code> element of aggregate reports (B12 and B17) and will be silent for most
+    operators for a long time — almost nobody emits it yet, which is what B18 measures. X28 treats a
+    permanent error as critical because of what it permits: an evaluator that classes an error
+    permanent may stop evaluating BIMI for every message from the domain until something changes.
+    X30 is the only alert here built on what a real receiver did rather than on what it reported: it
+    needs a seed mailbox (an account with its purpose set to <em>seed</em>), and it needs the
+    receiver to have passed before, so it fires on a change rather than on a receiver that has never
+    shown the logo.
     A report excluded by the RFC 8460 §3 signature requirement raises no alert either, so what
     you see on <a href="/tlsrpt">the TLS page</a> and what alerts fire always agree.
   </p>
@@ -63,7 +89,7 @@
 <!-- Health -->
 <article class="help-chapter" id="health">
   <header><h2>Health Score</h2></header>
-  <p>The score on the dashboard and domain pages adds six components, each capped at its
+  <p>The score on the dashboard and domain pages adds seven components, each capped at its
   weight (<code>HEALTH_W_*</code>):</p>
   <table>
     <thead><tr><th>Component</th><th>Formula</th><th>Weight</th></tr></thead>
@@ -74,6 +100,7 @@
       <tr><td>Reporter coverage</td><td>≥3 distinct reporters in the last 7 days → full, 2 → half, else 0</td><td>10</td></tr>
       <tr><td>Alerts</td><td>No open <em>critical</em> alert → full</td><td>10</td></tr>
       <tr><td>Transport security</td><td>TLS success rate (<a href="/help/metrics#tls">T1</a>) for 70% of the weight, plus TLS reporter coverage (<a href="/help/metrics#tls">T12</a>) for the rest: ≥2 reporters → full, 1 → half</td><td>15</td></tr>
+      <tr><td>Brand indicators</td><td>The DMARC policy permitting BIMI (<a href="/help/metrics#bimi">B10</a>) for 40% of the weight, plus the logo and evidence document checking out (<a href="/help/metrics#bimi">B6</a>–<a href="/help/metrics#bimi">B9</a>) for the rest. Scored only for a domain that publishes a record</td><td>10</td></tr>
     </tbody>
   </table>
   <p>
@@ -89,6 +116,15 @@
     component, the same as everywhere else. A domain whose only TLS reports arrive unsigned
     therefore scores as "no data" rather than as a failure — <a href="/tlsrpt">the TLS page</a>
     says how many were held back.
+  </p>
+  <p>
+    <strong>The same applies to BIMI, twice over.</strong> A domain that publishes no BIMI record —
+    or that declines to publish one, which is a decision rather than a gap — is not scored for BIMI
+    at all: the weight leaves the maximum, so the score is what it would have been without the
+    component. And a domain that does publish one but whose logo and certificate have not been
+    retrieved (because <code>BIMI_VALIDATE</code> is off, or Enrich has not run) is scored only on
+    the policy half, with the other 60% likewise out of the maximum. An unperformed check is not a
+    failed one.
   </p>
   <p>Labels: ≥85% Excellent, ≥65% Good, ≥40% Fair, otherwise Critical — as a share of the maximum in play.</p>
 </article>

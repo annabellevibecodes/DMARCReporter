@@ -54,8 +54,10 @@ func SaveReportAt(db *sqlx.DB, fb *models.Feedback, filename string, rawXML []by
 			 domain, adkim, aspf, policy, subdomain_policy, pct, failure_options,
 			 imported_at, source_filename,
 			 version, xml_namespace, np, discovery_method, testing, generator, report_errors,
-			 received_at, sp_present, pct_present, fo_present)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			 received_at, sp_present, pct_present, fo_present,
+			 bimi_present, bimi_dup_tuples, bimi_bad_counts, bimi_unknown_types,
+			 bimi_missing_attrs, malformed_fields)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		fb.ReportMetadata.OrgName,
 		fb.ReportMetadata.Email,
 		fb.ReportMetadata.ExtraContactInfo,
@@ -82,6 +84,12 @@ func SaveReportAt(db *sqlx.DB, fb *models.Feedback, filename string, rawXML []by
 		boolInt(pp.SPPresent),
 		boolInt(pp.PctPresent),
 		boolInt(pp.FOPresent),
+		fb.BIMIHygiene.Present,
+		fb.BIMIHygiene.DupTuples,
+		fb.BIMIHygiene.BadCounts,
+		fb.BIMIHygiene.UnknownTypes,
+		fb.BIMIHygiene.MissingAttrs,
+		fb.BIMIHygiene.MalformedFields,
 	)
 	if err != nil {
 		if isUniqueConstraint(err) {
@@ -158,6 +166,10 @@ func SaveReportAt(db *sqlx.DB, fb *models.Feedback, filename string, rawXML []by
 
 	if err := upsertSelectors(tx, fb); err != nil {
 		return 0, fmt.Errorf("upsert selectors: %w", err)
+	}
+
+	if err := insertBIMI(tx, reportID, fb.BIMI); err != nil {
+		return 0, err
 	}
 
 	if err := tx.Commit(); err != nil {

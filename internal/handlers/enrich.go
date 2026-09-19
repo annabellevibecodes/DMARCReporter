@@ -63,6 +63,8 @@ func (a *App) HandleEnrichPage(c *fiber.Ctx) error {
 		"EnrichSPFTotal":    status.SPFTotal,
 		"EnrichTLSDone":     status.TLSDone,
 		"EnrichTLSTotal":    status.TLSTotal,
+		"EnrichBIMIDone":    status.BIMIDone,
+		"EnrichBIMITotal":   status.BIMITotal,
 		"Title":             "Enrich — DMARC Reporter",
 		"Theme":             getTheme(c),
 		"ActivePage":        "enrich",

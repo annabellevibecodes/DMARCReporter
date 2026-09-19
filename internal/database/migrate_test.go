@@ -104,7 +104,10 @@ func TestMigrateLegacyDatabase(t *testing.T) {
 			t.Errorf("column reports.%s missing after migrate", c.name)
 		}
 	}
-	for _, tbl := range []string{"ip_labels", "selectors", "managed_domains", "ingest_events", "alerts", "spf_authorized_cache", "app_meta"} {
+	for _, tbl := range []string{
+		"ip_labels", "selectors", "managed_domains", "ingest_events", "alerts",
+		"spf_authorized_cache", "app_meta", "bimi_snapshots", "bimi_selectors",
+	} {
 		if err := db.Get(&n, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?`, tbl); err != nil {
 			t.Fatal(err)
 		}

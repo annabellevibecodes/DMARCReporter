@@ -1,5 +1,6 @@
 // Package metrics is the catalogue of metric identifiers (C1–C8, S1–S6,
-// A1–A8, P1–P6, R1–R8 and the X alert rules) used throughout the interface.
+// A1–A8, P1–P6, R1–R8, T1–T15, B1–B21 and the X alert rules) used throughout
+// the interface.
 // It is the single source of truth for the one-line summary shown when a
 // reference is hovered, and for where each one is documented in the Help
 // pages.
@@ -35,6 +36,7 @@ const (
 	hrefPolicy     = "/help/metrics#policy"
 	hrefReporters  = "/help/metrics#reporters"
 	hrefTLS        = "/help/metrics#tls"
+	hrefBIMI       = "/help/metrics#bimi"
 	hrefAlerts     = "/help/alerts#alerts"
 )
 
@@ -46,7 +48,8 @@ var Families = []Family{
 	{"P", "Policy (P1–P6)", "Your published DMARC record as reporters actually saw it.", hrefPolicy},
 	{"R", "Reporters (R1–R8)", "Who sends you reports, how promptly, and report hygiene.", hrefReporters},
 	{"T", "TLS (T1–T15)", "SMTP TLS reporting: session success, policies applied, and why connections failed.", hrefTLS},
-	{"X", "Alerts (X1–X19)", "The rules that raise alerts when a metric crosses its threshold.", hrefAlerts},
+	{"B", "BIMI (B1–B21)", "Brand indicator configuration, validation, and how evaluators judged it.", hrefBIMI},
+	{"X", "Alerts (X1–X30)", "The rules that raise alerts when a metric crosses its threshold.", hrefAlerts},
 }
 
 // All is every identifier, keyed by ID.
@@ -114,6 +117,31 @@ var All = map[string]Metric{
 	"T14": {"T14", "IPv4 vs IPv6", "How failures divide between address families, for both sending and receiving addresses.", hrefTLS},
 	"T15": {"T15", "TLS incidents", "Consecutive days sharing one result type and receiving host, as a worklist with durations.", hrefTLS},
 
+	// BIMI (brand indicators). B1–B10 come from what you publish and what the
+	// endpoints serve; B11–B20 from the <bimi> element in aggregate reports;
+	// B21 from verdicts receivers stamped on seed mail.
+	"B1":  {"B1", "BIMI inventory", "Every managed domain's published record per selector: l=, a=, avp=, lps=, or declination.", hrefBIMI},
+	"B2":  {"B2", "Record validity", "Tag syntax as the spec requires it: v=BIMI1 first, HTTPS-only URIs, unknown tags, empty versus absent.", hrefBIMI},
+	"B3":  {"B3", "BIMI selector inventory", "Every selector seen — published, echoed by an evaluator or derived from lps= — with first and last seen.", hrefBIMI},
+	"B4":  {"B4", "Declination and avatar preference", "Records declining to publish, and the avp= preference for personal avatars over the brand mark.", hrefBIMI},
+	"B5":  {"B5", "BIMI change log", "Each change of a record, indicator or evidence document, with what changed and when.", hrefBIMI},
+	"B6":  {"B6", "Indicator endpoint health", "Fetching l=: HTTP status, redirect count, TLS chain, size and content type.", hrefBIMI},
+	"B7":  {"B7", "SVG P/S conformance", "Whether the retrieved indicator validates against the SVG Tiny Portable/Secure profile.", hrefBIMI},
+	"B8":  {"B8", "Evidence document health", "The a= document: chain to a trusted MVA root, expiry runway, revocation, and the SAN domains it covers.", hrefBIMI},
+	"B9":  {"B9", "Indicator and evidence agreement", "Whether the mark inside the evidence document is the same mark served at l=, which the spec requires.", hrefBIMI},
+	"B10": {"B10", "BIMI readiness", "Whether a domain's DMARC policy would permit BIMI at all, before anything about logos is considered.", hrefBIMI},
+	"B11": {"B11", "BIMI-eligible volume", "Messages that met the authentication preconditions, the denominator every BIMI rate is built on.", hrefBIMI},
+	"B12": {"B12", "Reported errors", "Evaluator-reported error volume by element, class and type.", hrefBIMI},
+	"B13": {"B13", "Permanent error share", "The share an evaluator flagged permanent, which lets it stop evaluating the domain entirely.", hrefBIMI},
+	"B14": {"B14", "Configuration as evaluators saw it", "The l=, a= and selector each evaluator echoed back, against what you publish.", hrefBIMI},
+	"B15": {"B15", "Evidence freshness", "How stale each evaluator's cached evaluation of your evidence document is.", hrefBIMI},
+	"B16": {"B16", "Evaluator policy rejections", "Evidence that validated but was declined anyway: an evaluator decision no change of yours will fix.", hrefBIMI},
+	"B17": {"B17", "Evaluator divergence", "One configuration, different verdicts: the difference between a broken record and a strict receiver.", hrefBIMI},
+	"B18": {"B18", "BIMI reporting coverage", "Share of your volume from reporters that emit BIMI data at all, and so how representative B12–B17 are.", hrefBIMI},
+	"B19": {"B19", "BIMI hygiene", "Everything that makes the BIMI numbers less trustworthy: duplicate tuples, bad counts, unknown types.", hrefBIMI},
+	"B20": {"B20", "Estimated impressions", "Eligible volume against observed failure, as impressions shown and impressions lost.", hrefBIMI},
+	"B21": {"B21", "Observed verdicts", "The bimi= result real receivers stamped on seed mail, with the authority status and selector they used.", hrefBIMI},
+
 	// Alert rules.
 	"X1":  {"X1", "new_failing_source", "A source IP first seen recently is failing DMARC for a domain.", hrefAlerts},
 	"X2":  {"X2", "pass_rate_drop", "A domain's 7-day pass rate fell versus the previous 7 days.", hrefAlerts},
@@ -134,6 +162,17 @@ var All = map[string]Metric{
 	"X17": {"X17", "tls_dane_invalid", "A reporter could not validate your DANE records.", hrefAlerts},
 	"X18": {"X18", "tls_reporter_silent", "A TLS reporter active in the last 14 days has stopped sending reports.", hrefAlerts},
 	"X19": {"X19", "tls_new_failing_receiver", "A receiving node started failing under an MX host whose other nodes are fine.", hrefAlerts},
+	"X20": {"X20", "bimi_record_changed", "A domain's published BIMI assertion record changed.", hrefAlerts},
+	"X21": {"X21", "bimi_blocked_by_policy", "A domain publishes a BIMI record its DMARC policy stops any receiver acting on.", hrefAlerts},
+	"X22": {"X22", "bimi_unexpected_selector", "A BIMI selector not marked as expected started publishing a record.", hrefAlerts},
+	"X23": {"X23", "bimi_indicator_unreachable", "The logo at l= could not be retrieved, or its host's TLS chain did not validate.", hrefAlerts},
+	"X24": {"X24", "bimi_indicator_invalid", "The retrieved logo does not conform to the SVG Tiny Portable/Secure profile.", hrefAlerts},
+	"X25": {"X25", "bimi_evidence_expiring", "The evidence document at a= is approaching expiry.", hrefAlerts},
+	"X26": {"X26", "bimi_evidence_invalid", "The evidence document has expired, been revoked, or stopped chaining to a trusted root.", hrefAlerts},
+	"X27": {"X27", "bimi_indicator_mismatch", "The logo served at l= is not the mark inside the evidence document.", hrefAlerts},
+	"X28": {"X28", "bimi_errors_reported", "An evaluator reported a BIMI error tuple for a domain for the first time.", hrefAlerts},
+	"X29": {"X29", "bimi_evaluator_divergence", "Evaluators disagree about one BIMI configuration in the same window.", hrefAlerts},
+	"X30": {"X30", "bimi_verdict_regression", "A receiver that used to stamp bimi=pass on seed mail has stopped.", hrefAlerts},
 }
 
 // Get returns the metric with the given ID.

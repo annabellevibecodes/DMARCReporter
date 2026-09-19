@@ -18,6 +18,7 @@
       <a href="/reporters" style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">reporters</a>
       <a href="/alerts" style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">alerts</a>
       <a href="/tlsrpt"   style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">tls</a>
+      <a href="/bimi"     style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">bimi</a>
       <a href="/accounts" style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">accounts</a>
       <a href="/help"     style="font-size:11px;color:#6e6a60;text-decoration:none;letter-spacing:.04em;">help</a>
       <a href="/upload"   style="font-size:11px;color:#c1121f;text-decoration:none;font-weight:700;letter-spacing:.04em;">[upload]</a>
@@ -311,10 +312,11 @@
       <div style="padding:14px 22px;border-bottom:1px solid #1a1a1e;flex-shrink:0;">
         <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;">
           <span style="color:#c1121f;font-size:11px;letter-spacing:.18em;">&sect;07</span>
-          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:16px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">BIMI Coverage</span>
+          <span style="font-family:'Oswald',sans-serif;font-weight:700;font-size:16px;color:#d4d0c8;letter-spacing:.04em;text-transform:uppercase;">BIMI Readiness</span>
         </div>
         <div style="position:relative;height:150px;"><canvas id="bimi-pie-chart"></canvas></div>
         <script type="application/json" id="bimi-pie-data">{{.BIMIPieData}}</script>
+        {{with .BIMIReadiness}}<div style="font-size:10.5px;color:#7a7a80;margin-top:6px;letter-spacing:.02em;">Whether a logo would actually be shown, not whether a record exists.{{if gt .Unchecked 0}} {{.Unchecked}} domain(s) not yet looked up.{{end}}{{if gt .Declined 0}} {{.Declined}} decline deliberately.{{end}}</div>{{end}}
       </div>
 
       <!-- §08 MTA-STS Coverage -->

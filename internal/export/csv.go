@@ -175,6 +175,39 @@ func WriteCSV(w io.Writer, rd *ReportData) error {
 		write("No TLS reports for this period")
 	}
 
+	// Brand indicators.
+	blank()
+	write("BIMI (Brand Indicators)")
+	if kv := bimiSummaryKV(rd); len(kv) > 0 {
+		for _, row := range kv {
+			write(escapeFormula(row[0]), escapeFormula(row[1]))
+		}
+	}
+	if rows := bimiDomainRows(rd); len(rows) > 0 {
+		blank()
+		write("BIMI Configuration by Domain")
+		write(bimiDomainHeaders...)
+		for _, r := range rows {
+			write(escapeRow(r)...)
+		}
+	}
+	if rows := bimiErrorRows(rd); len(rows) > 0 {
+		blank()
+		write("BIMI Errors Reported by Evaluators")
+		write(bimiErrorHeaders...)
+		for _, r := range rows {
+			write(escapeRow(r)...)
+		}
+	}
+	if rows := bimiVerdictRows(rd); len(rows) > 0 {
+		blank()
+		write("BIMI Verdicts on Seed Mail")
+		write(bimiVerdictHeaders...)
+		for _, r := range rows {
+			write(escapeRow(r)...)
+		}
+	}
+
 	if rows := alertRows(rd); len(rows) > 0 {
 		blank()
 		write("Open Alerts")

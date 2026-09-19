@@ -70,6 +70,11 @@
         <summary style="font-size:0.85em;cursor:pointer;color:var(--pico-muted-color);">Raw TXT record</summary>
         <code style="display:block;margin-top:0.5rem;word-break:break-all;font-size:0.8em;">{{.DMARCRecord.Raw}}</code>
     </details>
+    {{else if not .DMARCRecord.Checked}}
+    <p style="color:var(--pico-muted-color);margin:0;">
+        Not looked up yet. Published records are resolved by the <a href="/enrich">Enrich</a> job and
+        by the background refresher, never while this page is loading.
+    </p>
     {{else}}
     <p class="flash flash-error" style="margin:0;">{{if .DMARCRecord.Error}}{{.DMARCRecord.Error}}{{else}}No DMARC record found.{{end}}</p>
     {{end}}
@@ -96,36 +101,418 @@
     </details>
     {{else if .MTASTSRecord.Error}}
     <p class="flash flash-error" style="margin:0;">DNS error: {{.MTASTSRecord.Error}}</p>
+    {{else if not .MTASTSRecord.Checked}}
+    <p style="color:var(--pico-muted-color);margin:0;">
+        Not looked up yet — see above.
+    </p>
     {{else}}
     <p style="color:var(--pico-muted-color);margin:0;">No MTA-STS record found.</p>
     {{end}}
 </article>
 <br/>
 
-<article>
-    <header>BIMI Record <small style="font-weight:normal;font-size:0.75em;opacity:0.6;">default._bimi.{{.Domain}}</small></header>
-    {{if .BIMIRecord.Found}}
-    <dl class="dmarc-tags">
-        <dt>Version</dt><dd>BIMI1</dd>
-        {{if .BIMIRecord.LogoURL}}<dt>Logo URL (l=)</dt><dd><a href="{{.BIMIRecord.LogoURL}}" style="word-break:break-all;" target="_blank" rel="noopener noreferrer">{{.BIMIRecord.LogoURL}}</a></dd>{{end}}
-        {{if .BIMIRecord.VMCCert}}<dt>VMC Certificate (a=)</dt><dd style="word-break:break-all;"><code>{{.BIMIRecord.VMCCert}}</code></dd>{{end}}
-    </dl>
-    <details style="margin-top:0.5rem;">
-        <summary style="font-size:0.85em;cursor:pointer;color:var(--pico-muted-color);">Tag explanations</summary>
-        <dl class="dmarc-tags" style="margin-top:0.5rem;">
-            <dt>Version (v=)</dt><dd>BIMI version identifier — must be BIMI1.</dd>
-            {{if .BIMIRecord.LogoURL}}<dt>Logo URL (l=)</dt><dd>A publicly accessible SVG file in BIMI Tiny P/S profile format containing your brand mark. Displayed as a sender avatar in supporting mail clients.</dd>{{end}}
-            {{if .BIMIRecord.VMCCert}}<dt>VMC Certificate (a=)</dt><dd>A Verified Mark Certificate issued by a certified authority (e.g., DigiCert, Entrust). Required by Gmail and other providers that enforce BIMI with authenticated brand indicators.</dd>{{end}}
-        </dl>
-    </details>
-    <details style="margin-top:0.5rem;">
-        <summary style="font-size:0.85em;cursor:pointer;color:var(--pico-muted-color);">Raw TXT record</summary>
-        <code style="display:block;margin-top:0.5rem;word-break:break-all;font-size:0.8em;">{{.BIMIRecord.Raw}}</code>
-    </details>
-    {{else if .BIMIRecord.Error}}
-    <p class="flash flash-error" style="margin:0;">DNS error: {{.BIMIRecord.Error}}</p>
+<article class="ax">
+    <header>
+        BIMI {{metric "B1"}}
+        <small style="font-weight:normal;font-size:0.75em;opacity:0.6;">_bimi.{{.Domain}}</small>
+    </header>
+
+    {{$r := .BIMI.Readiness}}
+    {{if $r}}
+    <div style="margin-bottom:0.75rem;">
+        <strong>Policy precondition {{metric "B10"}}:</strong>
+        {{if not $r.Known}}
+        <span class="badge neutral">unknown</span>
+        <span style="color:var(--pico-muted-color);">no report in this period names this domain, so there is nothing to judge the policy from.</span>
+        {{else if $r.Eligible}}
+        <span class="badge pass">eligible</span>
+        <span style="color:var(--pico-muted-color);">the published DMARC policy ({{range $i, $t := $r.Tags}}{{if $i}} {{end}}<code>{{$t}}</code>{{end}}) permits BIMI.</span>
+        {{else}}
+        <span class="badge fail">blocked</span>
+        <ul style="margin:0.35rem 0 0 0;">{{range $r.Blockers}}<li>{{.}}</li>{{end}}</ul>
+        {{end}}
+        {{if $r.Notes}}<ul style="margin:0.35rem 0 0 0;color:var(--pico-muted-color);font-size:0.9em;">{{range $r.Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}
+    </div>
+    {{end}}
+
+    {{if not .BIMI.Checked}}
+    <p style="color:var(--pico-muted-color);margin:0;">
+        This domain has not been looked up yet. Records are resolved by the
+        <a href="/enrich">Enrich</a> job and by the background refresher, never on page load.
+    </p>
     {{else}}
-    <p style="color:var(--pico-muted-color);margin:0;">No BIMI record found.</p>
+
+    {{range .BIMI.States}}
+    <details {{if eq .Selector "default"}}open{{end}} style="margin-bottom:0.5rem;">
+        <summary style="cursor:pointer;">
+            <code>{{.Selector}}._bimi.{{$.Domain}}</code>
+            <span class="badge {{bimiStateClass .State}}">{{bimiStateLabel .State}}</span>
+            {{if .Result.Fallback}}<small style="color:var(--pico-muted-color);">inherited from {{.Result.FoundAt}}</small>{{end}}
+            <small style="color:var(--pico-muted-color);">checked {{ago .LastSeen}}</small>
+        </summary>
+
+        {{if .Error}}
+        <p class="flash flash-error" style="margin:0.5rem 0;">Lookup failed: {{.Error}} — this says nothing about the domain, only that the resolver could not answer.</p>
+        {{end}}
+
+        {{if .Result.Err}}<p class="flash flash-error" style="margin:0.5rem 0;">{{.Result.Err}}</p>{{end}}
+
+        {{$rec := .Result.Record}}
+        <dl class="dmarc-tags" style="margin-top:0.5rem;">
+            {{if $rec.Version}}<dt>Version (v=)</dt><dd><code>{{$rec.Version}}</code></dd>{{end}}
+            {{if $rec.LPresent}}
+            <dt>Logo (l=)</dt>
+            <dd>{{if $rec.Location}}<a href="{{$rec.Location}}" style="word-break:break-all;" target="_blank" rel="noopener noreferrer">{{$rec.Location}}</a>{{else}}<em>empty — declining to publish</em>{{end}}</dd>
+            {{end}}
+            {{if $rec.APresent}}
+            <dt>Evidence (a=)</dt>
+            <dd style="word-break:break-all;">{{if $rec.Authority}}<code>{{$rec.Authority}}</code>{{else}}<em>empty — no evidence document offered</em>{{end}}</dd>
+            {{end}}
+            {{if $rec.LPSPresent}}
+            <dt>Local-part selectors (lps=) {{metric "B3"}}</dt>
+            <dd>{{if $rec.LPS}}{{range $i, $p := $rec.LPS}}{{if $i}}, {{end}}<code>{{$p}}</code>{{end}}{{else}}<em>empty — every local-part matches</em>{{end}}</dd>
+            {{end}}
+            {{if $rec.AVP}}
+            <dt>Avatar preference (avp=) {{metric "B4"}}</dt><dd><code>{{$rec.AVP}}</code></dd>
+            {{end}}
+        </dl>
+
+        {{if $rec.Problems}}
+        <table style="margin-top:0.5rem;">
+            <thead><tr><th>Finding {{metric "B2"}}</th><th>What it means</th></tr></thead>
+            <tbody>
+            {{range $rec.Problems}}
+            <tr>
+                <td style="white-space:nowrap;"><span class="badge {{bimiSeverityClass .Severity}}">{{.Severity}}</span> <code>{{.Code}}</code></td>
+                <td>{{.Message}}</td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        {{end}}
+
+        {{$v := index $.BIMI.Validations .Selector}}
+        {{if $v.Checked}}
+        {{$ind := $v.Indicator}}
+        <h5 style="margin:0.75rem 0 0.25rem 0;font-size:0.9rem;">
+            Logo endpoint {{metric "B6"}} {{metric "B7"}}
+            <span class="badge {{if $ind.Valid}}pass{{else}}fail{{end}}">{{if $ind.Valid}}ok{{else}}not usable{{end}}</span>
+            <small style="font-weight:normal;color:var(--pico-muted-color);">checked {{ago $v.IndicatorSeen}}</small>
+        </h5>
+        <dl class="dmarc-tags">
+            <dt>Retrieved</dt>
+            <dd>
+                {{if $ind.Retrieved}}{{$ind.Bytes}} bytes{{if $ind.Compressed}} (served compressed){{end}}, SHA-256 <code>{{$ind.SHA256}}</code>{{else}}nothing was retrieved{{end}}
+            </dd>
+            {{if $ind.Fetch.Status}}<dt>HTTP</dt><dd>{{$ind.Fetch.Status}}{{if $ind.Fetch.ContentType}}, {{$ind.Fetch.ContentType}}{{end}}{{if $ind.Fetch.DurationMS}}, {{$ind.Fetch.DurationMS}} ms{{end}}</dd>{{end}}
+            {{if $ind.Fetch.Redirects}}<dt>Redirects</dt><dd>{{range $i, $u := $ind.Fetch.Redirects}}{{if $i}} → {{end}}<span style="word-break:break-all;">{{$u}}</span>{{end}}</dd>{{end}}
+            {{if $ind.Fetch.TLS}}<dt>Transport</dt><dd>{{$ind.Fetch.TLS.Version}}, certificate issued by {{$ind.Fetch.TLS.Issuer}}</dd>{{end}}
+            {{if $ind.SVGPS.Title}}<dt>Mark title</dt><dd>{{$ind.SVGPS.Title}}</dd>{{end}}
+            {{if $ind.SVGPS.Colors}}<dt>Colours</dt><dd>{{range $i, $c := $ind.SVGPS.Colors}}{{if $i}}, {{end}}<code>{{$c}}</code>{{end}}</dd>{{end}}
+        </dl>
+
+        {{with $ev := $v.Evidence}}
+        <h5 style="margin:0.75rem 0 0.25rem 0;font-size:0.9rem;">
+            Evidence document {{metric "B8"}}
+            <span class="badge {{if $ev.Valid}}pass{{else}}fail{{end}}">{{if $ev.Valid}}ok{{else}}not usable{{end}}</span>
+            <small style="font-weight:normal;color:var(--pico-muted-color);">checked {{ago $v.EvidenceSeen}}</small>
+        </h5>
+        <dl class="dmarc-tags">
+            {{if $ev.Subject}}<dt>Issued to</dt><dd>{{$ev.Subject}}{{if and $ev.SubjectOrg (ne $ev.SubjectOrg $ev.Subject)}} ({{$ev.SubjectOrg}}){{end}}</dd>{{end}}
+            {{if $ev.Issuer}}<dt>Issued by</dt><dd>{{$ev.Issuer}}</dd>{{end}}
+            {{if $ev.NotAfter}}
+            <dt>Expires</dt>
+            <dd>
+                {{unixTime $ev.NotAfter}} —
+                {{if lt $ev.DaysToExpiry 0}}<strong>expired {{$ev.DaysToExpiry}} days ago</strong>{{else}}{{$ev.DaysToExpiry}} days of runway{{end}}
+            </dd>
+            {{end}}
+            <dt>Chain</dt>
+            <dd>
+                {{if $ev.Trusted}}validates{{else}}does not validate{{end}}
+                against {{if eq $ev.RootSource "mva"}}the configured Mark Verifying Authority roots{{else}}the operating system's trust store (set <code>BIMI_ROOTS_PATH</code> to check the roots receivers actually use){{end}}
+            </dd>
+            {{if $ev.SANs}}<dt>Covers</dt><dd>{{range $i, $d := $ev.SANs}}{{if $i}}, {{end}}<code>{{$d}}</code>{{end}}</dd>{{end}}
+            <dt>Revocation</dt>
+            <dd>
+                {{if eq $ev.Revocation.Status "good"}}
+                not revoked{{if $ev.Revocation.At}}, as of {{unixTime $ev.Revocation.At}}{{end}}
+                {{else if eq $ev.Revocation.Status "revoked"}}
+                <strong>revoked</strong>{{if $ev.Revocation.Reason}} ({{$ev.Revocation.Reason}}){{end}}
+                {{else if eq $ev.Revocation.Status "unknown"}}
+                could not be determined{{if $ev.Revocation.Err}} — {{$ev.Revocation.Err}}{{end}}
+                {{else}}
+                not checked{{if $ev.Revocation.Err}} — {{$ev.Revocation.Err}}{{end}}
+                {{end}}
+            </dd>
+            {{with $ev.Mark}}
+            <dt>Mark inside it</dt>
+            <dd>{{.Bytes}} bytes{{if .Compressed}} (stored compressed){{end}}, SHA-256 <code>{{.SHA256}}</code></dd>
+            {{end}}
+        </dl>
+        {{end}}
+
+        <h5 style="margin:0.75rem 0 0.25rem 0;font-size:0.9rem;">Mark agreement {{metric "B9"}}</h5>
+        <p style="margin:0 0 0.5rem 0;">
+            {{if $v.Agreement.Checked}}
+                {{if $v.Agreement.Matches}}
+                <span class="badge pass">agrees</span>
+                the logo served at <code>l=</code> is the mark inside the evidence document.
+                {{else}}
+                <span class="badge fail">disagrees</span>
+                the logo served at <code>l=</code> is <strong>not</strong> the mark inside the evidence document, so no receiver will display it.
+                {{end}}
+            {{else}}
+            <span class="badge neutral">not applicable</span>
+            <span style="color:var(--pico-muted-color);">{{$v.Agreement.Note}}</span>
+            {{end}}
+        </p>
+
+        {{$findings := $v.Findings}}
+        {{if $findings}}
+        <table style="margin-top:0.5rem;">
+            <thead><tr><th>Finding</th><th>What it means</th></tr></thead>
+            <tbody>
+            {{range $findings}}
+            <tr>
+                <td style="white-space:nowrap;"><span class="badge {{bimiSeverityClass .Severity}}">{{.Severity}}</span> <code>{{.Code}}</code></td>
+                <td>{{.Message}}</td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        {{end}}
+        {{else if and (eq .State "published") $.BIMI.ValidationEnabled}}
+        <p style="color:var(--pico-muted-color);margin:0.5rem 0 0 0;">
+            The logo and evidence document have not been retrieved yet. They are fetched by the
+            <a href="/enrich">Enrich</a> job.
+        </p>
+        {{else if eq .State "published"}}
+        <p style="color:var(--pico-muted-color);margin:0.5rem 0 0 0;">
+            Retrieval of the logo and evidence document is switched off
+            (<code>BIMI_VALIDATE=false</code>), so {{metric "B6"}}–{{metric "B9"}} are not evaluated
+            for this domain. Nothing here says whether the documents are healthy.
+        </p>
+        {{end}}
+
+        {{if .Raw}}
+        <details style="margin-top:0.5rem;">
+            <summary style="font-size:0.85em;cursor:pointer;color:var(--pico-muted-color);">Raw TXT record</summary>
+            <code style="display:block;margin-top:0.5rem;word-break:break-all;font-size:0.8em;white-space:pre-wrap;">{{.Raw}}</code>
+        </details>
+        {{end}}
+    </details>
+    {{end}}
+
+    {{if .BIMI.Selectors}}
+    <h4 style="margin:1rem 0 0.25rem 0;font-size:0.95rem;">Selector inventory {{metric "B3"}}</h4>
+    <table>
+        <thead><tr><th>Selector</th><th>Source</th><th>First seen</th><th>Last seen</th><th>Expected</th></tr></thead>
+        <tbody>
+        {{range .BIMI.Selectors}}
+        <tr>
+            <td><code>{{.Selector}}</code></td>
+            <td>{{.Source}}</td>
+            <td>{{unixTime .FirstSeen}}</td>
+            <td>{{unixTime .LastSeen}}</td>
+            <td>{{if eq .Expected 1}}yes{{else if eq .Expected 0}}no{{else}}—{{end}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+    {{end}}
+
+
+
+    {{if gt (len .BIMI.Changes) 1}}
+    <h4 style="margin:1rem 0 0.25rem 0;font-size:0.95rem;">Change log {{metric "B5"}}</h4>
+    <table>
+        <thead><tr><th>Selector</th><th>Observed</th><th>Record</th><th>Checks</th></tr></thead>
+        <tbody>
+        {{range .BIMI.Changes}}
+        <tr>
+            <td><code>{{.Selector}}</code></td>
+            <td style="white-space:nowrap;">{{unixDateTime .FirstSeen}}</td>
+            <td style="word-break:break-all;font-size:0.85em;">{{if .Error}}<em>lookup failed: {{.Error}}</em>{{else if .Content}}<code>{{.Content}}</code>{{else}}<em>no record</em>{{end}}</td>
+            <td>{{.Checks}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+    <p style="color:var(--pico-muted-color);font-size:0.85em;margin:0.35rem 0 0 0;">
+        One row per distinct observed state, not per check — a stable record stays a single row however often it is polled.
+    </p>
+    {{end}}
+    {{end}}
+
+    {{with $rep := .BIMI.Reporting}}
+    <h4 style="margin:1.25rem 0 0.25rem 0;font-size:0.95rem;">As evaluators saw it {{metricRange "B11" "B20"}}</h4>
+    {{$cov := $rep.Coverage}}
+    <p style="margin:0 0 0.5rem 0;">
+        <strong>Reporting coverage {{metric "B18"}}:</strong>
+        {{if eq $cov.ReportersWith 0}}
+        <span class="badge neutral">no data</span>
+        none of the {{$cov.Reporters}} reporter(s) for this domain emit BIMI data, so nothing below
+        can be read as evidence that logos are or are not being shown. Almost no reporter emits it
+        yet; this is the expected state.
+        {{else}}
+        {{$cov.ReportersWith}} of {{$cov.Reporters}} reporter(s) emit BIMI data
+        ({{printf "%.1f" $cov.Share}}% of {{commaN $cov.TotalMessages}} messages{{if $cov.Orgs}}: {{range $i, $o := $cov.Orgs}}{{if $i}}, {{end}}{{$o}}{{end}}{{end}}).
+        Everything below is drawn from that share only.
+        {{end}}
+    </p>
+
+    {{$el := $rep.Eligibility}}
+    <p style="margin:0 0 0.5rem 0;">
+        <strong>Eligible volume {{metric "B11"}}:</strong>
+        {{commaN $el.Eligible}} of {{commaN $el.Total}} messages ({{printf "%.1f" $el.Share}}%) met the
+        authentication preconditions.
+        {{if and (gt $el.Passed 0) (eq $el.Eligible 0)}}
+        {{commaN $el.Passed}} message(s) passed DMARC but the policy disqualifies the domain — see
+        the precondition above.
+        {{end}}
+    </p>
+
+    {{if $rep.Errors}}
+    <table>
+        <thead><tr><th>Evaluator</th><th>Selector</th><th>Error {{metric "B12"}}</th><th>Class</th><th style="text-align:right;">Count</th></tr></thead>
+        <tbody>
+        {{range $rep.Errors}}
+        <tr>
+            <td>{{.OrgName}}</td>
+            <td><code>{{.Selector}}</code></td>
+            <td>{{.Element}}{{if .Type}} / {{.Type}}{{end}}{{if .Description}}<br/><small style="color:var(--pico-muted-color);">{{.Description}}</small>{{end}}</td>
+            <td><span class="badge {{if eq .Class "perm"}}fail{{else}}warn{{end}}">{{orNone .Class}}</span></td>
+            <td style="text-align:right;">{{commaN .Count}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+    {{$perm := $rep.Permanent}}
+    <p style="color:var(--pico-muted-color);font-size:0.85em;margin:0.35rem 0 0 0;">
+        {{metric "B13"}} {{printf "%.0f" $perm.Share}}% of the {{commaN $perm.Total}} reported error(s) were
+        classed permanent, which lets an evaluator stop evaluating this domain until something changes.
+        {{$imp := $rep.Impressions}}
+        {{metric "B20"}} against {{commaN $imp.Eligible}} eligible message(s) that is an estimated
+        {{printf "%.1f" $imp.Rate}}% failure rate{{if $imp.Over100}} — over 100%, because one message can
+        produce several errors and the two counts come from different parts of the report{{end}}.
+        Every figure here is an estimate.
+    </p>
+    {{else}}
+    <p style="color:var(--pico-muted-color);margin:0 0 0.5rem 0;">
+        No evaluator has reported a BIMI error for this domain {{metric "B12"}}. With the coverage
+        above, read that as "nobody told us", not as "nothing is wrong".
+    </p>
+    {{end}}
+
+    {{if $rep.Configs}}
+    <h5 style="margin:0.75rem 0 0.25rem 0;font-size:0.9rem;">Configuration each evaluator saw {{metric "B14"}}</h5>
+    <table>
+        <thead><tr><th>Evaluator</th><th>Selector</th><th>l=</th><th>a=</th><th>Matches yours</th></tr></thead>
+        <tbody>
+        {{range $rep.Configs}}
+        <tr>
+            <td>{{.OrgName}}</td>
+            <td><code>{{.Selector}}</code></td>
+            <td style="word-break:break-all;font-size:0.85em;">{{orNone .LValue}}</td>
+            <td style="word-break:break-all;font-size:0.85em;">{{orNone .AValue}}</td>
+            <td>{{if .Matches}}<span class="badge pass">yes</span>{{else}}<span class="badge warn">no</span>{{end}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+    <p style="color:var(--pico-muted-color);font-size:0.85em;margin:0.35rem 0 0 0;">
+        Evaluators disagreeing with each other inside one window means the DNS answered differently to
+        different resolvers. All of them agreeing with each other but not with what you publish now
+        means the record changed and these reports predate it.
+    </p>
+    {{end}}
+
+    {{if $rep.Freshness}}
+    <h5 style="margin:0.75rem 0 0.25rem 0;font-size:0.9rem;">Evidence freshness {{metric "B15"}}</h5>
+    <table>
+        <thead><tr><th>Evaluator</th><th>Selector</th><th>Evaluated</th><th>Age at report</th><th>Issuer</th></tr></thead>
+        <tbody>
+        {{range $rep.Freshness}}
+        <tr>
+            <td>{{.OrgName}}</td><td><code>{{.Selector}}</code></td>
+            <td>{{unixTime .Evaluated}}</td>
+            <td>{{.AgeDays}} day(s)</td>
+            <td>{{orNone .Issuer}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+    {{end}}
+
+    {{$diverged := false}}
+    {{range $rep.Divergence}}{{if .Disagree}}{{$diverged = true}}{{end}}{{end}}
+    {{if $diverged}}
+    <h5 style="margin:0.75rem 0 0.25rem 0;font-size:0.9rem;">Evaluator divergence {{metric "B17"}}</h5>
+    <ul style="margin:0;">
+    {{range $rep.Divergence}}{{if .Disagree}}
+        <li>
+            <code>{{.Selector}}</code>:
+            {{range $i, $v := .Verdicts}}{{if $i}}; {{end}}{{$v.OrgName}} —
+            {{if $v.Errors}}{{range $j, $e := $v.Errors}}{{if $j}}, {{end}}<code>{{$e}}</code>{{end}}{{else}}no errors{{end}}{{end}}
+        </li>
+    {{end}}{{end}}
+    </ul>
+    <p style="color:var(--pico-muted-color);font-size:0.85em;margin:0.35rem 0 0 0;">
+        One configuration, different verdicts: where evaluators agree the fault is yours, and where one
+        refuses what the others accept, the difference is that receiver's strictness.
+    </p>
+    {{end}}
+
+    {{$h := $rep.Hygiene}}
+    {{if gt $h.ReportsAffected 0}}
+    <p style="color:var(--pico-muted-color);font-size:0.85em;margin:0.5rem 0 0 0;">
+        {{metric "B19"}} {{$h.ReportsAffected}} of {{$h.Reports}} report(s) in this period broke a rule of the
+        reporting schema or needed a value salvaged:
+        {{if gt $h.DupTuples 0}}{{$h.DupTuples}} duplicate tuple(s);{{end}}
+        {{if gt $h.BadCounts 0}}{{$h.BadCounts}} count(s) that were not positive numbers;{{end}}
+        {{if gt $h.UnknownTypes 0}}{{$h.UnknownTypes}} unregistered class or type value(s);{{end}}
+        {{if gt $h.MissingAttrs 0}}{{$h.MissingAttrs}} missing required attribute(s);{{end}}
+        {{if gt $h.MalformedFields 0}}{{$h.MalformedFields}} malformed field(s) salvaged;{{end}}
+        {{if gt $h.UnparsedDates 0}}{{$h.UnparsedDates}} unreadable evidence date(s).{{end}}
+        Nothing was discarded — the reports are stored as they arrived.
+    </p>
+    {{end}}
+    {{end}}
+
+    {{if or .BIMI.Verdicts .BIMI.SeedConfigured}}
+    <h4 style="margin:1.25rem 0 0.25rem 0;font-size:0.95rem;">What receivers actually did {{metric "B21"}}</h4>
+    {{if .BIMI.Verdicts}}
+    <table>
+        <thead><tr><th>Receiver</th><th>Selector</th><th>Latest verdict</th><th>Messages</th><th>Shown</th></tr></thead>
+        <tbody>
+        {{range .BIMI.Verdicts}}
+        <tr>
+            <td>{{.Receiver}}</td>
+            <td><code>{{.Selector}}</code></td>
+            <td>
+                <span class="badge {{if eq .LastResult "pass"}}pass{{else if eq .LastResult "declined"}}neutral{{else if eq .LastResult "none"}}neutral{{else}}fail{{end}}">{{.LastResult}}</span>
+                {{if .LastComment}}<small style="color:var(--pico-muted-color);">{{.LastComment}}</small>{{end}}
+                <br/><small style="color:var(--pico-muted-color);">last seen {{unixTime .LastSeen}}</small>
+            </td>
+            <td>{{.Messages}}</td>
+            <td>{{printf "%.0f" .PassRate}}%</td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+    <p style="color:var(--pico-muted-color);font-size:0.85em;margin:0.35rem 0 0 0;">
+        These are the verdicts real receivers stamped on mail you sent to a seed address — the only
+        evidence here of what a person would actually have seen. They say nothing about mail you did
+        not send there. Only the header your provider added is trusted: anyone who can email the
+        seed address can write the ones below it.
+    </p>
+    {{else}}
+    <p style="color:var(--pico-muted-color);margin:0;">
+        A seed mailbox is configured but no receiver has stamped a <code>bimi=</code> result on mail
+        from this domain yet. Send mail from it to the seed address and the verdicts will appear here.
+    </p>
+    {{end}}
     {{end}}
 </article>
 <br/>
